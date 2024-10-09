@@ -204,11 +204,22 @@ writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 # Get unique Signal Quality values
 signal_statuses = df["Signal Quality"].unique()
 
-# Write each Signal Status group into a separate sheet
+# Summarise data per Signal Quality
+summary_data = df.groupby("Signal Quality").agg(
+    Num_Coins=("Symbol", "count"),
+    Avg_RSI=("RSI 4H", "mean"),
+    Avg_CND_Rating=("CND Rating", "mean"),
+    Avg_Score_Code_D=("Score Code D", "mean")
+).reset_index()
+
+# Write the summary data to a new sheet in the Excel file
+summary_data.to_excel(writer, sheet_name="Summary", index=False)
+
+# Add the individual Signal Quality sheets
 for status in signal_statuses:
     df_status = df[df["Signal Quality"] == status]
     df_status.to_excel(writer, sheet_name=status, index=False)
-
+    
 # Save the Excel file
 writer.close()
 
