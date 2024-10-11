@@ -11,6 +11,7 @@ EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 interval = "4h"  # Set to 4 hours
 limit = 14  # Changed limit to 14
 
+print("Starting Market Predictor")
 # Function to convert timestamps to local system time
 def convert_to_local_time(timestamp):
     local_time = datetime.fromtimestamp(timestamp / 1000)  # Convert timestamp to local time
@@ -62,7 +63,7 @@ def calculate_score_code_d(long_short_ratio, rsi, cnd_rating):
 
     score_code_d = (long_short_ratio * long_short_weight) + ((10 - rsi) * rsi_weight)
 
-    return score_code_d
+    return abs(score_code_d)
 
 # Function to calculate Signal Quality
 def calculate_signal_quality(cnd_rating, rsi):
@@ -98,26 +99,14 @@ def forecast_price_ema(closing_prices, period_4h, period_8h, period_12h):
     return ema_4h, ema_8h, ema_12h
 
 # Function to determine the Prediction Status
-def calculate_prediction_status(signal_status, signal_quality, rsi, cnd_rating, score_code_d):
-    if signal_status == "Hold" and signal_quality == "1CR" and 70 < rsi < 73 and 4.0 < cnd_rating < 4.9 and score_code_d > -50:
-        return "Long_1CR_7%"
-    elif signal_status == "Hold" and signal_quality == "2CR" and rsi < 66 and cnd_rating < 7.00 and score_code_d > -25:
-        return "Short_2CR"
-    elif signal_status == "Hold" and signal_quality == "2CR" and rsi < 66 and cnd_rating < 7.00 and score_code_d < -25:
-        return "Long_2CR"
-    elif signal_status == "Buy" and signal_quality == "2CR" and 47 < rsi < 70 and 7.00 < cnd_rating < 7.838 and -18 < score_code_d < -12:
-        return "Long_2CR_3%"
-    elif signal_status == "Hold" and signal_quality == "3CR" and rsi < 66 and cnd_rating < 7.00 and score_code_d > -18:
-        return "Short_3CR"
+def calculate_prediction_status(signal_status, signal_quality, rsi,long_short_ratio, cnd_rating, price_change_percentage,score_code_d):
+    if signal_quality == "1CR" and (70 < rsi < 85) and (0.634 <long_short_ratio<0.8057)and( 41.98928718< score_code_d < 51.80367341) and (0.570915243<price_change_percentage<0.917775506):
+        return "Long_1CR_3.5%"
+    elif signal_quality == "1CR" and (72.4052983 < rsi < 76.68759812) and (0.7705 <long_short_ratio<1.6853)and( 37.54553318< score_code_d < 46.45016868) and (2.177706874<price_change_percentage<4.078581175):
+        return "Short_1CR_5.7%"  
     else:
         return "Placeholder"
 
-# Function to determine the Likely Coins to change 5%
-def determine_high_change(signal_status, signal_quality, rsi, cnd_rating, score_code_d):
-    if 62 < rsi < 66 and 5.5 < cnd_rating < 5.7 and -27.5 < score_code_d < -24:
-        return "Long_5%"
-    else:
-        return "NA"
 
 # Get all futures symbols
 exchange_info_response = requests.get(EXCHANGE_INFO_URL)
@@ -171,7 +160,6 @@ for symbol in symbols:
             signal_status = "Hold"
 
         prediction_status = calculate_prediction_status(signal_status, signal_quality, rsi, cnd_rating, score_code_d)
-        likely_change = determine_high_change(signal_status, signal_quality, rsi, cnd_rating, score_code_d)
 
         result = {
             "Symbol": symbol,
@@ -187,7 +175,6 @@ for symbol in symbols:
             "Score Code D": score_code_d,
             "Signal Status": signal_status,
             "Prediction Status": prediction_status,
-            "Likely 5% Change": likely_change,
             "Price Change 4H-8H": price_change_percentage,
             "Volume Change %": volume_change_percentage,
         }
@@ -197,8 +184,11 @@ for symbol in symbols:
 # Convert results to DataFrame
 df = pd.DataFrame(all_results)
 
+# Generate a timestamp in the format YYYYMMDD_HHMMSS
+timestamp = datetime.now().strftime("%d%m%Y_%H%M")
+
 # Create a Pandas Excel writer object using XlsxWriter as the engine
-output_file = "signals.xlsx"
+output_file = f"signals_{timestamp}.xlsx"
 writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 
 # Get unique Signal Quality values
