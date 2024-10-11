@@ -99,8 +99,8 @@ def forecast_price_ema(closing_prices, period_4h, period_8h, period_12h):
     return ema_4h, ema_8h, ema_12h
 
 # Function to determine the Prediction Status
-def calculate_prediction_status(signal_status, signal_quality, rsi,long_short_ratio, cnd_rating, price_change_percentage,score_code_d):
-    if signal_quality == "1CR" and (70 < rsi < 85) and (0.634 <long_short_ratio<0.8057)and( 41.98928718< score_code_d < 51.80367341) and (0.570915243<price_change_percentage<0.917775506):
+def calculate_prediction_status(signal_quality, rsi, long_short_ratio, cnd_rating, price_change_percentage, score_code_d):
+    if signal_quality == "1CR" and (70 < rsi < 85) and (0.634 <long_short_ratio<0.8057) and ( 41.98928718< score_code_d < 51.80367341) and (0.570915243<price_change_percentage<0.917775506):
         return "Long_1CR_3.5%"
     elif signal_quality == "1CR" and (72.4052983 < rsi < 76.68759812) and (0.7705 <long_short_ratio<1.6853)and( 37.54553318< score_code_d < 46.45016868) and (2.177706874<price_change_percentage<4.078581175):
         return "Short_1CR_5.7%"  
@@ -159,7 +159,7 @@ for symbol in symbols:
         else:
             signal_status = "Hold"
 
-        prediction_status = calculate_prediction_status(signal_status, signal_quality, rsi, cnd_rating, score_code_d)
+        prediction_status = calculate_prediction_status(signal_quality, rsi, long_short_ratio, cnd_rating, price_change_percentage, score_code_d)
 
         result = {
             "Symbol": symbol,
