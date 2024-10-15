@@ -13,9 +13,7 @@ limit = 14  # Changed limit to 14
 
 print("Starting Market Predictor")
 # Function to convert timestamps to local system time
-def convert_to_local_time(timestamp):
-    local_time = datetime.fromtimestamp(timestamp / 1000)  # Convert timestamp to local time
-    return local_time.strftime('%H:%M:%S')  # Return time as HH:MM:SS
+timestamp = datetime.now().strftime("%H:%M:%S")
 
 # Function to calculate CND Rating
 def calculate_cnd_rating(long_percent, short_percent):
@@ -100,10 +98,14 @@ def forecast_price_ema(closing_prices, period_4h, period_8h, period_12h):
 
 # Function to determine the Prediction Status
 def calculate_prediction_status(signal_quality, rsi, long_short_ratio, cnd_rating, price_change_percentage, score_code_d):
-    if signal_quality == "1CR" and (70 < rsi < 85) and (0.634 <long_short_ratio<0.8057) and ( 41.98928718< score_code_d < 51.80367341) and (0.570915243<price_change_percentage<0.917775506):
-        return "Long_1CR_3.5%"
-    elif signal_quality == "1CR" and (72.4052983 < rsi < 76.68759812) and (0.7705 <long_short_ratio<1.6853)and( 37.54553318< score_code_d < 46.45016868) and (2.177706874<price_change_percentage<4.078581175):
-        return "Short_1CR_5.7%"  
+    if signal_quality=="1CR" and (70.25641026< rsi < 95.3395472) and (0.526<long_short_ratio<2.199) and ( 36.36229526< score_code_d < 59.57988309):
+        return "Long_3.0%"
+    elif signal_quality=="1CR" and  (71.51226371 < rsi < 91.71122995) and (0.7409 <long_short_ratio<1.0773)and( 42.8363146< score_code_d < 56.87467096):
+        return "Long_5.0%"
+    elif signal_quality=="1CR" and (72.54487856 < rsi < 76.63865546) and (0.8396<long_short_ratio<2.126)and( 36.67901176< score_code_d < 46.25215145):
+        return "Short_3.00%"
+    elif signal_quality=="1CR" and (72.4052983 < rsi < 80.0157356412274) and (0.6661 <long_short_ratio<1.5681)and( 37.9< score_code_d < 48.56233495):
+        return "Short_6.00%" 
     else:
         return "Placeholder"
 
@@ -141,7 +143,7 @@ for symbol in symbols:
 
         score_code_d = calculate_score_code_d(long_short_ratio, rsi, cnd_rating)
 
-        timestamp = kline_data[-1][0]
+        #timestamp = kline_data[-1][0]
         current_price = closing_prices[-1]
 
         # EMA Forecasts
@@ -153,9 +155,9 @@ for symbol in symbols:
         signal_quality = calculate_signal_quality(cnd_rating, rsi)
 
         if rsi < 30:
-            signal_status = "Long"
+            signal_status = "Buy"
         elif rsi > 70:
-            signal_status = "Short"
+            signal_status = "Sell"
         else:
             signal_status = "Hold"
 
@@ -163,7 +165,7 @@ for symbol in symbols:
 
         result = {
             "Symbol": symbol,
-            "Timestamp": convert_to_local_time(timestamp),
+            "Timestamp": timestamp,
             "Current Price": current_price,
             "EMA 4H": ema_4h,
             "EMA 8H": ema_8h,
@@ -184,11 +186,10 @@ for symbol in symbols:
 # Convert results to DataFrame
 df = pd.DataFrame(all_results)
 
-# Generate a timestamp in the format YYYYMMDD_HHMMSS
-timestamp = datetime.now().strftime("%d%m%Y_%H%M")
+timestamp_output_file = datetime.now().strftime("%d%m%Y_%H%M")
 
 # Create a Pandas Excel writer object using XlsxWriter as the engine
-output_file = f"signals_{timestamp}.xlsx"
+output_file = f"signals_{timestamp_output_file}.xlsx"
 writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 
 # Get unique Signal Quality values
