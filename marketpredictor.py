@@ -98,14 +98,14 @@ def forecast_price_ema(closing_prices, period_4h, period_8h, period_12h):
 
 # Function to determine the Prediction Status
 def calculate_prediction_status(signal_quality, rsi, long_short_ratio, cnd_rating, price_change_percentage, score_code_d):
-    if signal_quality=="1CR" and (70.25641026< rsi < 95.3395472) and (0.526<long_short_ratio<2.199) and ( 36.36229526< score_code_d < 59.57988309):
-        return "Long_3.0%"
-    elif signal_quality=="1CR" and  (71.51226371 < rsi < 91.71122995) and (0.7409 <long_short_ratio<1.0773)and( 42.8363146< score_code_d < 56.87467096):
+    if signal_quality == "1CR" and (82.66666667 < rsi < 93.12130178) and (0.5891 < long_short_ratio < 1.9121) and (43.95245958 < score_code_d < 57.81318124):
         return "Long_5.0%"
-    elif signal_quality=="1CR" and (72.54487856 < rsi < 76.63865546) and (0.8396<long_short_ratio<2.126)and( 36.67901176< score_code_d < 46.25215145):
+    elif signal_quality == "1CR" and (70.25641026 < rsi < 80.25) and (0.634 < long_short_ratio < 1.9533) and (37.30031265 < score_code_d < 46.11983113):
+        return "Long_3.0%"
+    elif signal_quality == "1CR" and (74.00611621 < rsi < 80.01573564) and (0.6661 < long_short_ratio < 1.5681) and (37.90060504 < score_code_d < 48.56233495):
+        return "Short_5.00%"
+    elif signal_quality == "1CR" and (72.54901961 < rsi < 73.8700565) and (0.8396 < long_short_ratio < 2.126) and (36.67901176 < score_code_d < 44.44683795):
         return "Short_3.00%"
-    elif signal_quality=="1CR" and (72.4052983 < rsi < 80.0157356412274) and (0.6661 <long_short_ratio<1.5681)and( 37.9< score_code_d < 48.56233495):
-        return "Short_6.00%" 
     else:
         return "Placeholder"
 
