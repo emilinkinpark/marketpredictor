@@ -20,7 +20,7 @@ def calculate_cnd_rating(long_percent, short_percent):
     return (long_percent / (long_percent + short_percent)) * 10  # Scale to 10
 
 # Function to calculate RSI
-def calculate_rsi(prices, limit):
+def calculate_rsi(prices):
     deltas = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
     gain = sum(x for x in deltas if x > 0) / limit
     loss = abs(sum(x for x in deltas if x < 0)) / limit
