@@ -98,11 +98,11 @@ def forecast_price_ema(closing_prices, period_4h, period_8h, period_12h):
 
 # Function to determine the Prediction Status
 def calculate_prediction_status(signal_quality, rsi, long_short_ratio, cnd_rating, price_change_percentage, score_code_d):
-    if signal_quality == "1CR" and (82.66666667 < rsi < 93.12130178) and (0.5891 < long_short_ratio < 1.9121) and (43.95245958 < score_code_d < 57.81318124):
+    if signal_quality == "1CR" and (84.00 < rsi < 93.12130178) and (0.5891 < long_short_ratio < 1.9121) and (43.95245958 < score_code_d < 57.81318124):
         return "Long_5.0%"
     elif signal_quality == "1CR" and (70.25641026 < rsi < 80.25) and (0.634 < long_short_ratio < 1.9533) and (37.30031265 < score_code_d < 46.11983113):
         return "Long_3.0%"
-    elif signal_quality == "1CR" and (74.00611621 < rsi < 80.01573564) and (0.6661 < long_short_ratio < 1.5681) and (37.90060504 < score_code_d < 48.56233495):
+    elif signal_quality == "1CR" and (74.00611621 < rsi < 82.89940828) and (0.6661 < long_short_ratio < 1.5681) and (37.90060504 < score_code_d < 48.56233495):
         return "Short_5.00%"
     elif signal_quality == "1CR" and (72.54901961 < rsi < 73.8700565) and (0.8396 < long_short_ratio < 2.126) and (36.67901176 < score_code_d < 44.44683795):
         return "Short_3.00%"
