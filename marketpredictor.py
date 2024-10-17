@@ -20,10 +20,10 @@ def calculate_cnd_rating(long_percent, short_percent):
     return (long_percent / (long_percent + short_percent)) * 10  # Scale to 10
 
 # Function to calculate RSI
-def calculate_rsi(prices, period=14):
+def calculate_rsi(prices, limit):
     deltas = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
-    gain = sum(x for x in deltas if x > 0) / period
-    loss = abs(sum(x for x in deltas if x < 0)) / period
+    gain = sum(x for x in deltas if x > 0) / limit
+    loss = abs(sum(x for x in deltas if x < 0)) / limit
 
     if loss == 0:  # No loss means RS is effectively infinite, so RSI should be 100
         return 100
