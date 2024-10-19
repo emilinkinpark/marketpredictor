@@ -10,7 +10,7 @@ EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 
 # Parameters for API requests
 interval = "1h"
-limit = 14
+limit = 24
 
 # Function to calculate RSI
 def calculate_rsi(prices):
@@ -113,8 +113,6 @@ def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_rat
 
 # Main symbol processing function
 def process_symbols():
-    interval = "1h"
-    limit = 14
     # Get all futures symbols
     exchange_info_response = requests.get(EXCHANGE_INFO_URL)
     exchange_info_data = exchange_info_response.json()
