@@ -33,6 +33,37 @@ def calculate_ema(prices, period):
         ema.append(new_ema)
     return ema[-1]
 
+def calculate_dynamic_stop_loss(current_price, atr, adx, entry_price=None, stop_loss=None, use_trailing=False):
+    """
+    Calculate a dynamic stop-loss based on market volatility, trend strength, and optional trailing logic.
+
+    Args:
+        current_price (float): The current market price.
+        atr (float): Average True Range (ATR) indicating market volatility.
+        adx (float): Average Directional Index (ADX) indicating trend strength.
+        entry_price (float): Entry price of the trade, required for trailing stop-loss.
+        stop_loss (float): Current stop-loss value, used for trailing stop-loss logic.
+        use_trailing (bool): If True, use trailing stop-loss logic.
+
+    Returns:
+        float: Calculated dynamic stop-loss price.
+    """
+    # ATR-based stop-loss adjustment
+    if atr > 2 and adx > 25:
+        calculated_stop_loss = current_price - (2 * atr)  # Wider stop-loss for volatile and trending markets
+    elif atr < 1.5 or adx < 20:
+        calculated_stop_loss = current_price - (0.5 * atr)  # Tighter stop-loss for less volatile or non-trending markets
+    else:
+        calculated_stop_loss = current_price - (1 * atr)  # Standard stop-loss for moderate conditions
+
+    # Implement trailing stop-loss logic if enabled
+    if use_trailing and entry_price is not None and stop_loss is not None:
+        # Ensure the trailing stop-loss never decreases
+        trailing_stop_loss = max(stop_loss, current_price * (1 - 0.05))  # Example of 5% trailing stop-loss
+        calculated_stop_loss = max(calculated_stop_loss, trailing_stop_loss)  # Use the higher of the two stop-loss values
+
+    return calculated_stop_loss
+
 # Function to calculate MACD
 def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
     short_ema = calculate_ema(prices, short_period)
@@ -143,7 +174,6 @@ def process_symbols():
             rsi = calculate_rsi(closing_prices)
 
             current_price = closing_prices[-1]
-            stop_loss = current_price * 0.95
 
             macd_line, signal_line, macd_histogram = calculate_macd(closing_prices)
             atr = calculate_atr(highs, lows, closing_prices)
@@ -151,6 +181,16 @@ def process_symbols():
             di_plus, di_minus, adx = calculate_dmi_and_adx(highs, lows, closing_prices)
 
             signal_quality = calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line)
+
+            # Calculate the dynamic stop-loss using the new function
+            stop_loss = calculate_dynamic_stop_loss(
+                current_price=current_price,
+                atr=atr,
+                adx=adx,
+                entry_price=current_price,
+                stop_loss=None,  # If there is no existing stop-loss, it defaults to a newly calculated stop-loss
+                use_trailing=False  # Set to True if you want to use trailing stop-loss logic
+            )
 
             prediction_status, profit_target = calculate_prediction_status(
                 entry_price=current_price,
@@ -169,7 +209,6 @@ def process_symbols():
                 stop_loss=stop_loss
             )
 
-
             # Adding a timestamp for the data collected
             timestamp = datetime.now().strftime("%H:%M:%S")
 
@@ -183,6 +222,7 @@ def process_symbols():
                 "Signal Quality": signal_quality,
                 "Prediction Status": prediction_status,
                 "Profit Target": profit_target,
+                "Stop Loss": stop_loss,  # Include the calculated stop-loss in the result
                 "MACD Line": macd_line,
                 "Signal Line": signal_line,
                 "MACD Histogram": macd_histogram,
@@ -203,12 +243,33 @@ def save_grouped_by_signal_quality(df):
     output_file = f"Signals_{current_time}.xlsx"
     writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 
+    # Create a summary per Signal Quality
+    summary = df.groupby("Signal Quality").agg(
+        Total_Symbols=("Symbol", "nunique"),
+        Avg_RSI=("RSI", "mean"),
+        Avg_ATR=("ATR", "mean"),
+        Avg_ADX=("ADX", "mean"),
+        Total_Trades=("Symbol", "count"),
+        Strong_Long=("Prediction Status", lambda x: (x == "Strong Long (>5%)").sum()),
+        Moderate_Long=("Prediction Status", lambda x: (x == "Moderate Long (2% - 5%)").sum()),
+        Weak_Long=("Prediction Status", lambda x: (x == "Weak Long (0% - 2%)").sum()),
+        Strong_Short=("Prediction Status", lambda x: (x == "Strong Short (>5%)").sum()),
+        Moderate_Short=("Prediction Status", lambda x: (x == "Moderate Short (2% - 5%)").sum()),
+        Weak_Short=("Prediction Status", lambda x: (x == "Weak Short (0% - 2%)").sum()),
+        Hold_Count=("Prediction Status", lambda x: (x == "Hold").sum())
+    ).reset_index()
+
+    # Write the Signal Quality summary to the leftmost sheet named "Summary"
+    summary.to_excel(writer, sheet_name="Summary", index=False)
+
+    ## Create Individual Coin data per Signal Quality
     signal_qualities = df["Signal Quality"].unique()
 
     for quality in signal_qualities:
         df_quality = df[df["Signal Quality"] == quality]
         df_quality.to_excel(writer, sheet_name=str(quality), index=False)
 
+    # Save the Excel file
     writer.close()
     return output_file
 
