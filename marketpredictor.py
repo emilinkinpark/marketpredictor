@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 # Binance Futures API URLs for long/short data, kline data
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -8,26 +9,29 @@ KLINE_URL = "https://fapi.binance.com/fapi/v1/klines"
 EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 
 # Parameters for API requests
-interval = "1h"  # Set to 1 hour
-limit = 14  # Changed limit to 14
+interval = "1h"
+limit = 14
 
 # Function to calculate RSI
 def calculate_rsi(prices):
     deltas = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
     gain = sum(x for x in deltas if x > 0) / limit
     loss = abs(sum(x for x in deltas if x < 0)) / limit
-
-    if loss == 0:  # No loss means RS is effectively infinite, so RSI should be 100
+    if loss == 0:
         return 100
     else:
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
-
     return rsi
 
-# Function to calculate moving averages
-def calculate_moving_average(prices, period):
-    return sum(prices[-period:]) / period
+# Function to calculate EMA
+def calculate_ema(prices, period):
+    ema = [sum(prices[:period]) / period]
+    multiplier = 2 / (period + 1)
+    for price in prices[period:]:
+        new_ema = (price - ema[-1]) * multiplier + ema[-1]
+        ema.append(new_ema)
+    return ema[-1]
 
 # Function to calculate MACD
 def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
@@ -35,52 +39,32 @@ def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
     long_ema = calculate_ema(prices, long_period)
     macd_line = short_ema - long_ema
     signal_line = calculate_ema([macd_line] * signal_period, signal_period)
-    return macd_line, signal_line
+    macd_histogram = macd_line - signal_line
+    return macd_line, signal_line, macd_histogram
 
-# Function to calculate EMA
-def calculate_ema(prices, period):
-    ema = [sum(prices[:period]) / period]  # Starting EMA as simple average of first 'period' prices
-    multiplier = 2 / (period + 1)
-
-    for price in prices[period:]:
-        new_ema = (price - ema[-1]) * multiplier + ema[-1]
-        ema.append(new_ema)
-
-    return ema[-1]  # Return the latest EMA value
+# Function to calculate ATR
+def calculate_atr(highs, lows, closes, period=14):
+    tr = [max(high - low, abs(high - closes[i - 1]), abs(low - closes[i - 1])) for i, (high, low) in enumerate(zip(highs[1:], lows[1:]), 1)]
+    return sum(tr[-period:]) / period
 
 # Function to calculate CND Rating
 def calculate_cnd_rating(long_percent, short_percent):
-    return (long_percent / (long_percent + short_percent)) * 10  # Scale to 10
+    return (long_percent / (long_percent + short_percent)) * 10
 
-# Function to calculate Score Code D with dynamic weighting
-def calculate_score_code_d(long_short_ratio, rsi, cnd_rating):
-    if rsi > 70:
-        rsi_weight = 0.7
-        long_short_weight = 0.3
-    elif rsi < 30:
-        rsi_weight = 0.3
-        long_short_weight = 0.7
-    else:
-        rsi_weight = 0.5
-        long_short_weight = 0.5
-
-    if long_short_ratio > 1.5:
-        long_short_weight += 0.1
-        rsi_weight -= 0.1
-    elif long_short_ratio < 0.5:
-        long_short_weight -= 0.1
-        rsi_weight += 0.1
-
-    if cnd_rating > 7:
-        long_short_weight += 0.05
-        rsi_weight -= 0.05
-    elif cnd_rating < 3:
-        long_short_weight -= 0.05
-        rsi_weight += 0.05
-
-    score_code_d = (long_short_ratio * long_short_weight) + ((10 - rsi) * rsi_weight)
-
-    return abs(score_code_d)
+# Function to calculate DMI and ADX
+def calculate_dmi_and_adx(highs, lows, closes, period=14):
+    plus_dm = [max(highs[i] - highs[i - 1], 0) if (highs[i] - highs[i - 1]) > (lows[i - 1] - lows[i]) else 0 for i in range(1, len(highs))]
+    minus_dm = [max(lows[i - 1] - lows[i], 0) if (lows[i - 1] - lows[i]) > (highs[i] - highs[i - 1]) else 0 for i in range(1, len(lows))]
+    
+    tr = [max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])) for i in range(1, len(highs))]
+    
+    tr_sum = sum(tr[-period:])
+    plus_di = (sum(plus_dm[-period:]) / tr_sum) * 100
+    minus_di = (sum(minus_dm[-period:]) / tr_sum) * 100
+    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100 if (plus_di + minus_di) != 0 else 0
+    adx = sum([dx] * period) / period  # Approximation; replace with smoother ADX calculation if needed
+    
+    return plus_di, minus_di, adx
 
 # Function to calculate Signal Quality
 def calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line):
@@ -93,54 +77,49 @@ def calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line):
     else:
         return "1CR"
 
-# Function to determine the Prediction Status and set Profit Target
-# Function to determine the Prediction Status and set Profit Target in percentage
-def calculate_prediction_status_and_profit_target(entry_price, signal_quality, rsi, long_short_ratio, cnd_rating, macd_line, signal_line, current_price, stop_loss, risk_reward_ratio=2):
-    # Set Profit Target based on risk-reward ratio
+# Function to determine the Prediction Status
+def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_ratio, cnd_rating, macd_line, signal_line, macd_histogram, atr, di_plus, di_minus, adx, current_price, stop_loss, risk_reward_ratio=2):
+    """
+    Determine the prediction status using various indicators including MACD histogram, ATR, DMI, and ADX.
+    """
+    # Calculate percentage change between entry price and profit target
     risk = abs(entry_price - stop_loss)
     profit_target = entry_price + (risk * risk_reward_ratio) if signal_quality in ["4CR", "3CR"] else entry_price - (risk * risk_reward_ratio)
 
-    # Calculate the percentage change between entry price and profit target
+    # Calculate the percentage change
     if profit_target > entry_price:
         percentage_change = ((profit_target - entry_price) / entry_price) * 100
     else:
         percentage_change = ((entry_price - profit_target) / entry_price) * 100
 
-    # Classification based on percentage price change thresholds
-    if signal_quality == "4CR" and percentage_change > 5 and rsi < 30:
-        return f"Strong Long (>5%)", profit_target
-    elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line > signal_line:
-        return f"Moderate Long (2% - 5%)", profit_target
-    elif signal_quality == "2CR" and 0 < percentage_change <= 2:
-        return f"Weak Long (0% - 2%)", profit_target
-    elif signal_quality == "1CR":
-        return f"Hold", None
-    elif signal_quality == "4CR" and percentage_change > 5 and rsi > 70:
-        return f"Strong Short (>5%)", profit_target
-    elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line < signal_line:
-        return f"Moderate Short (2% - 5%)", profit_target
-    elif signal_quality == "2CR" and 0 < percentage_change <= 2:
-        return f"Weak Short (0% - 2%)", profit_target
+    # Refine prediction using additional indicators
+    if adx > 25:  # Ensure the trend is strong
+        if signal_quality == "4CR" and percentage_change > 5 and rsi < 30 and atr > 1 and di_plus > di_minus:
+            return f"Strong Long (>5%)", profit_target
+        elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line > signal_line and macd_histogram > 0 and di_plus > di_minus:
+            return f"Moderate Long (2% - 5%)", profit_target
+        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and macd_histogram > 0 and di_plus > di_minus:
+            return f"Weak Long (0% - 2%)", profit_target
+        elif signal_quality == "4CR" and percentage_change > 5 and rsi > 70 and atr > 1 and di_minus > di_plus:
+            return f"Strong Short (>5%)", profit_target
+        elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line < signal_line and macd_histogram < 0 and di_minus > di_plus:
+            return f"Moderate Short (2% - 5%)", profit_target
+        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and macd_histogram < 0 and di_minus > di_plus:
+            return f"Weak Short (0% - 2%)", profit_target
+        else:
+            return "Hold", None
     else:
-        return "Placeholder", None
+        return "No Strong Trend", None
 
-# Function to set Trailing Stop Loss
-def set_trailing_stop(current_price, trail_percentage):
-    """
-    Set a trailing stop based on the current price and a trailing percentage.
-    """
-    stop_price = current_price * (1 - trail_percentage / 100)
-    return stop_price
-
-# Function to process symbols and calculate all indicators
-def process_symbols(): 
-
+# Main symbol processing function
+def process_symbols():
+    interval = "1h"
+    limit = 14
     # Get all futures symbols
     exchange_info_response = requests.get(EXCHANGE_INFO_URL)
     exchange_info_data = exchange_info_response.json()
     symbols = [symbol['symbol'] for symbol in exchange_info_data['symbols']]
-
-    # List to hold results for all symbols
+    
     all_results = []
 
     for symbol in symbols:
@@ -161,16 +140,21 @@ def process_symbols():
             cnd_rating = calculate_cnd_rating(long_account_percent, short_account_percent)
 
             closing_prices = [float(kline_entry[4]) for kline_entry in kline_data]
+            highs = [float(kline_entry[2]) for kline_entry in kline_data]
+            lows = [float(kline_entry[3]) for kline_entry in kline_data]
             rsi = calculate_rsi(closing_prices)
 
             current_price = closing_prices[-1]
             stop_loss = current_price * 0.95
 
-            score_code_d = calculate_score_code_d(long_short_ratio, rsi, cnd_rating)
-            macd_line, signal_line = calculate_macd(closing_prices)
+            macd_line, signal_line, macd_histogram = calculate_macd(closing_prices)
+            atr = calculate_atr(highs, lows, closing_prices)
+
+            di_plus, di_minus, adx = calculate_dmi_and_adx(highs, lows, closing_prices)
+
             signal_quality = calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line)
 
-            prediction_status, profit_target = calculate_prediction_status_and_profit_target(
+            prediction_status, profit_target = calculate_prediction_status(
                 entry_price=current_price,
                 signal_quality=signal_quality,
                 rsi=rsi,
@@ -178,25 +162,36 @@ def process_symbols():
                 cnd_rating=cnd_rating,
                 macd_line=macd_line,
                 signal_line=signal_line,
+                macd_histogram=macd_histogram,
+                atr=atr,
+                di_plus=di_plus,
+                di_minus=di_minus,
+                adx=adx,
                 current_price=current_price,
                 stop_loss=stop_loss
             )
 
-            trailing_stop = set_trailing_stop(current_price, trail_percentage=5)
+
+            # Adding a timestamp for the data collected
+            timestamp = datetime.now().strftime("%H:%M:%S")
 
             result = {
+                "Timestamp": timestamp,
                 "Symbol": symbol,
                 "Current Price": current_price,
                 "RSI": rsi,
                 "Long/Short Ratio": long_short_ratio,
                 "CND Rating": cnd_rating,
                 "Signal Quality": signal_quality,
-                "Score Code D": score_code_d,
                 "Prediction Status": prediction_status,
                 "Profit Target": profit_target,
-                "Trailing Stop": trailing_stop,
                 "MACD Line": macd_line,
-                "Signal Line": signal_line
+                "Signal Line": signal_line,
+                "MACD Histogram": macd_histogram,
+                "ATR": atr,
+                "DI+": di_plus,
+                "DI-": di_minus,
+                "ADX": adx
             }
 
             all_results.append(result)
@@ -219,7 +214,25 @@ def save_grouped_by_signal_quality(df):
     writer.close()
     return output_file
 
+# Function to visualize Prediction Status
+def visualize_prediction_status(df):
+    status_counts = df["Prediction Status"].value_counts()
+
+    plt.figure(figsize=(10, 6))
+    status_counts.plot(kind='bar', color='skyblue', edgecolor='black')
+    plt.title('Prediction Status Count')
+    plt.xlabel('Prediction Status')
+    plt.ylabel('Count')
+    plt.xticks(rotation=45)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+
+    plt.show()
+
 # Execute the symbol processing and save the results
 processed_data = process_symbols()
 output_file = save_grouped_by_signal_quality(processed_data)
 print(f"Data saved to {output_file}")
+
+# Visualize the results
+visualize_prediction_status(processed_data)
