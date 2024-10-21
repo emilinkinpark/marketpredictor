@@ -127,15 +127,15 @@ def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_rat
     if adx > 25:  # Ensure the trend is strong
         if signal_quality == "4CR" and percentage_change > 5 and rsi < 30 and atr > 1 and di_plus > di_minus:
             return f"Strong Long (>5%)", profit_target
-        elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line > signal_line and macd_histogram > 0 and di_plus > di_minus:
+        elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line > signal_line and di_plus > di_minus:
             return f"Moderate Long (2% - 5%)", profit_target
-        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and macd_histogram > 0 and di_plus > di_minus:
+        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and di_plus > di_minus:
             return f"Weak Long (0% - 2%)", profit_target
         elif signal_quality == "4CR" and percentage_change > 5 and rsi > 70 and atr > 1 and di_minus > di_plus:
             return f"Strong Short (>5%)", profit_target
-        elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line < signal_line and macd_histogram < 0 and di_minus > di_plus:
+        elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line < signal_line and  di_minus > di_plus:
             return f"Moderate Short (2% - 5%)", profit_target
-        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and macd_histogram < 0 and di_minus > di_plus:
+        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and di_minus > di_plus:
             return f"Weak Short (0% - 2%)", profit_target
         else:
             return "Hold", None
