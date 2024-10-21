@@ -74,7 +74,7 @@ def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
     return macd_line, signal_line, macd_histogram
 
 # Function to calculate ATR
-def calculate_atr(highs, lows, closes, period=14):
+def calculate_atr(highs, lows, closes, period=limit):
     tr = [max(high - low, abs(high - closes[i - 1]), abs(low - closes[i - 1])) for i, (high, low) in enumerate(zip(highs[1:], lows[1:]), 1)]
     return sum(tr[-period:]) / period
 
@@ -83,7 +83,7 @@ def calculate_cnd_rating(long_percent, short_percent):
     return (long_percent / (long_percent + short_percent)) * 10
 
 # Function to calculate DMI and ADX
-def calculate_dmi_and_adx(highs, lows, closes, period=14):
+def calculate_dmi_and_adx(highs, lows, closes, period=limit):
     plus_dm = [max(highs[i] - highs[i - 1], 0) if (highs[i] - highs[i - 1]) > (lows[i - 1] - lows[i]) else 0 for i in range(1, len(highs))]
     minus_dm = [max(lows[i - 1] - lows[i], 0) if (lows[i - 1] - lows[i]) > (highs[i] - highs[i - 1]) else 0 for i in range(1, len(lows))]
     
@@ -135,7 +135,7 @@ def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_rat
             return f"Strong Short (>5%)", profit_target
         elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line < signal_line and  di_minus > di_plus:
             return f"Moderate Short (2% - 5%)", profit_target
-        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and di_minus > di_plus:
+        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and  di_minus > di_plus:
             return f"Weak Short (0% - 2%)", profit_target
         else:
             return "Hold", None
