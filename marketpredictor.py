@@ -2,6 +2,12 @@ import requests
 import pandas as pd
 from datetime import datetime
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import tkinter as tk
+from tkinter import filedialog
+import time
+import threading
+import itertools
 
 # Binance Futures API URLs for long/short data, kline data
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -123,20 +129,23 @@ def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_rat
     else:
         percentage_change = ((entry_price - profit_target) / entry_price) * 100
 
+    # Debugging: Print the key values for inspection
+    #print(f"Signal Quality: {signal_quality}, Percentage Change: {percentage_change:.2f}%, RSI: {rsi}, ATR: {atr}, ADX: {adx}, DI+: {di_plus}, DI-: {di_minus}, MACD Line: {macd_line}, Signal Line: {signal_line}")
+
     # Refine prediction using additional indicators
     if adx > 25:  # Ensure the trend is strong
-        if signal_quality == "4CR" and percentage_change > 5 and rsi < 30 and atr > 1 and di_plus > di_minus:
-            return f"Strong Long (>5%)", profit_target
-        elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line > signal_line and di_plus > di_minus:
-            return f"Moderate Long (2% - 5%)", profit_target
-        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and di_plus > di_minus:
-            return f"Weak Long (0% - 2%)", profit_target
-        elif signal_quality == "4CR" and percentage_change > 5 and rsi > 70 and atr > 1 and di_minus > di_plus:
-            return f"Strong Short (>5%)", profit_target
-        elif signal_quality == "3CR" and 2 < percentage_change <= 5 and macd_line < signal_line and  di_minus > di_plus:
-            return f"Moderate Short (2% - 5%)", profit_target
-        elif signal_quality == "2CR" and 0 < percentage_change <= 2 and  di_minus > di_plus:
-            return f"Weak Short (0% - 2%)", profit_target
+        if signal_quality == "4CR" and percentage_change > 3 and rsi < 40 and atr > 0.5 and di_plus > di_minus:
+            return f"Strong Long (>3%)", profit_target
+        elif signal_quality == "3CR" and 1.5 < percentage_change <= 3 and macd_line > signal_line and di_plus > di_minus:
+            return f"Moderate Long (1.5% - 3%)", profit_target
+        elif signal_quality == "2CR" and 0 < percentage_change <= 1.5 and di_plus > di_minus:
+            return f"Weak Long (0% - 1.5%)", profit_target
+        elif signal_quality == "4CR" and percentage_change > 3 and rsi > 60 and atr > 0.5 and di_minus > di_plus:
+            return f"Strong Short (>3%)", profit_target
+        elif signal_quality == "3CR" and 1.5 < percentage_change <= 3 and macd_line < signal_line and di_minus > di_plus:
+            return f"Moderate Short (1.5% - 3%)", profit_target
+        elif signal_quality == "2CR" and 0 < percentage_change <= 1.5 and di_minus > di_plus:
+            return f"Weak Short (0% - 1.5%)", profit_target
         else:
             return "Hold", None
     else:
@@ -250,12 +259,12 @@ def save_grouped_by_signal_quality(df):
         Avg_ATR=("ATR", "mean"),
         Avg_ADX=("ADX", "mean"),
         Total_Trades=("Symbol", "count"),
-        Strong_Long=("Prediction Status", lambda x: (x == "Strong Long (>5%)").sum()),
-        Moderate_Long=("Prediction Status", lambda x: (x == "Moderate Long (2% - 5%)").sum()),
-        Weak_Long=("Prediction Status", lambda x: (x == "Weak Long (0% - 2%)").sum()),
-        Strong_Short=("Prediction Status", lambda x: (x == "Strong Short (>5%)").sum()),
-        Moderate_Short=("Prediction Status", lambda x: (x == "Moderate Short (2% - 5%)").sum()),
-        Weak_Short=("Prediction Status", lambda x: (x == "Weak Short (0% - 2%)").sum()),
+        Strong_Long=("Prediction Status", lambda x: (x == "Strong Long (>3%)").sum()),
+        Moderate_Long=("Prediction Status", lambda x: (x == "Moderate Long (1.5% - 3%)").sum()),
+        Weak_Long=("Prediction Status", lambda x: (x == "Weak Long (0% - 1.5%)").sum()),
+        Strong_Short=("Prediction Status", lambda x: (x == "Strong Short (>3%)").sum()),
+        Moderate_Short=("Prediction Status", lambda x: (x == "Moderate Short (1.5% - 3%)").sum()),
+        Weak_Short=("Prediction Status", lambda x: (x == "Weak Short (0% - 1.5%)").sum()),
         Hold_Count=("Prediction Status", lambda x: (x == "Hold").sum())
     ).reset_index()
 
@@ -273,25 +282,137 @@ def save_grouped_by_signal_quality(df):
     writer.close()
     return output_file
 
-# Function to visualize Prediction Status
-def visualize_prediction_status(df):
-    status_counts = df["Prediction Status"].value_counts()
+""""""
+# Initialize previous data list to hold last 10 data points and their timestamps
+previous_data_list = []
+previous_timestamps = []
 
-    plt.figure(figsize=(10, 6))
-    status_counts.plot(kind='bar', color='skyblue', edgecolor='black')
-    plt.title('Prediction Status Count')
-    plt.xlabel('Prediction Status')
-    plt.ylabel('Count')
-    plt.xticks(rotation=45)
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
+# Colors for the last 10 intervals (cycling through colors)
+colors = itertools.cycle(["red", "green", "blue", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"])
+
+# Variable to store the ID of the scheduled "after" call
+after_id = None
+
+# Function to plot the prediction status on a canvas and reset after 10 old data points
+def visualize_prediction_status(new_df, canvas, ax):
+    global previous_data_list, previous_timestamps
+
+    # Clear the previous plot
+    ax.clear()
+
+    # Get the counts for new data
+    new_status_counts = new_df["Prediction Status"].value_counts()
+
+    # Plot each of the last 10 old data points with the time they were updated
+    for i, (old_data, timestamp) in enumerate(zip(previous_data_list, previous_timestamps)):
+        old_status_counts = old_data["Prediction Status"].value_counts()
+        old_color = next(colors)
+        old_status_counts.plot(kind='bar', color=old_color, edgecolor='black', alpha=0.5, ax=ax, label=f"{timestamp}")
+
+    # Plot the new data in default color
+    new_status_counts.plot(kind='bar', color='skyblue', edgecolor='black', ax=ax, label="Current Data")
+    
+    # Customize the plot
+    ax.set_title('Prediction Status Count (Last 10 Intervals)')
+    ax.set_xlabel('Prediction Status')
+    ax.set_ylabel('Count')
+    ax.legend()
+
+    # Apply tight layout to prevent cropping
     plt.tight_layout()
 
-    plt.show()
+    # Refresh the canvas to show the updated plot
+    canvas.draw()
 
-# Execute the symbol processing and save the results
-processed_data = process_symbols()
-output_file = save_grouped_by_signal_quality(processed_data)
-print(f"Data saved to {output_file}")
+    # Append the current data and its timestamp to previous_data_list
+    current_time = datetime.now().strftime("%H:%M:%S")
+    
+    # Reset the old data list after 10 updates
+    if len(previous_data_list) == 10:
+        previous_data_list.clear()  # Reset the list
+        previous_timestamps.clear()  # Reset the timestamps
 
-# Visualize the results
-visualize_prediction_status(processed_data)
+    # Add the new data and timestamp after reset
+    previous_data_list.append(new_df.copy())
+    previous_timestamps.append(current_time)
+
+# Function to save the current DataFrame to an Excel file using save_grouped_by_signal_quality
+def save_file(df):
+    # Open a file dialog to let the user choose the save location
+    file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", 
+                                             filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
+    
+    if file_path:  # If the user selects a file path
+        # Save the DataFrame to the selected location
+        output_file = save_grouped_by_signal_quality(df)
+        
+        # Rename and move the file to the selected location
+        import shutil
+        shutil.move(output_file, file_path)
+        print(f"Data saved to {file_path}")
+
+# Function to update the countdown timer
+def update_timer(label, remaining_time, canvas, ax, df):
+    global after_id  # Use a global variable to store the ID of the "after" call
+    if remaining_time > 0:
+        minutes, seconds = divmod(remaining_time, 60)
+        label.config(text=f"Next update in: {minutes:02}:{seconds:02}")
+        after_id = label.after(1000, update_timer, label, remaining_time - 1, canvas, ax, df)
+    else:
+        # Time is up; update the plot and reset the timer
+        processed_data = process_symbols()  # Get the latest processed data
+        visualize_prediction_status(processed_data, canvas, ax)  # Update the plot in the GUI
+        update_timer(label, 1800, canvas, ax, df)  # Reset the countdown for another 30 minutes
+
+# Function to cancel pending after() calls when the window is closed
+def on_close(root):
+    global after_id
+    if after_id is not None:
+        root.after_cancel(after_id)  # Cancel any pending after() calls
+    root.destroy()  # Close the window
+
+# GUI setup with tkinter
+def create_gui(df):
+    root = tk.Tk()
+    root.title("Prediction Status Visualization")
+    
+    # Create a frame for the "Save" button and canvas
+    frame = tk.Frame(root)
+    frame.pack(pady=20)
+
+    # Countdown timer label
+    timer_label = tk.Label(root, text="Next update in: 30:00", font=("Arial", 14))
+    timer_label.pack(pady=10)
+    
+    # "Save" button to download the current data using the provided save_grouped_by_signal_quality function
+    save_button = tk.Button(frame, text="Save Current Data", command=lambda: save_file(df))
+    save_button.pack(side=tk.LEFT, padx=10)
+    
+    # Create a larger figure (12x8) and an axis for the plot
+    fig, ax = plt.subplots(figsize=(12, 8))  # Increased figure size
+
+    # Embed the matplotlib figure in the tkinter window using FigureCanvasTkAgg
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas_widget = canvas.get_tk_widget()
+    canvas_widget.pack(pady=20)
+
+    # Visualize the initial plot
+    visualize_prediction_status(df, canvas, ax)
+
+    # Start the countdown timer for 30 minutes (1800 seconds)
+    update_timer(timer_label, 1800, canvas, ax, df)
+
+    # Set the protocol to handle window close event
+    root.protocol("WM_DELETE_WINDOW", lambda: on_close(root))
+
+    # Allow dynamic window resizing
+    root.geometry("1024x768")  # Set a minimum size for the window
+
+    # Start the tkinter main loop
+    root.mainloop()
+
+# Assuming process_symbols returns the latest processed DataFrame
+processed_data = process_symbols()  # Process symbols to get the initial data
+
+# Start the GUI
+create_gui(processed_data)
