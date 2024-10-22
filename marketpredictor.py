@@ -369,6 +369,12 @@ def on_close(root):
         root.after_cancel(after_id)  # Cancel any pending after() calls
     root.destroy()  # Close the window
 
+# Function to update the plot and reset the countdown timer manually
+def get_new_data(canvas, ax, label, df):
+    processed_data = process_symbols()  # Get the latest processed data
+    visualize_prediction_status(processed_data, canvas, ax)  # Update the plot
+    update_timer(label, 1800, canvas, ax, df)  # Reset the countdown timer
+
 # GUI setup with tkinter
 def create_gui(df):
     root = tk.Tk()
@@ -385,6 +391,10 @@ def create_gui(df):
     # "Save" button to download the current data using the provided save_grouped_by_signal_quality function
     save_button = tk.Button(frame, text="Save Current Data", command=lambda: save_file(df))
     save_button.pack(side=tk.LEFT, padx=10)
+    
+    # "Get Data" button to manually fetch new data and reset the countdown timer
+    get_data_button = tk.Button(frame, text="Get Data", command=lambda: get_new_data(canvas, ax, timer_label, df))
+    get_data_button.pack(side=tk.LEFT, padx=10)
     
     # Create a larger figure (12x8) and an axis for the plot
     fig, ax = plt.subplots(figsize=(12, 8))  # Increased figure size
