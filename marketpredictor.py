@@ -300,18 +300,21 @@ def visualize_prediction_status(new_df, canvas, ax):
     # Clear the previous plot
     ax.clear()
 
-    # Get the counts for new data
+    # Get the counts for the new data
     new_status_counts = new_df["Prediction Status"].value_counts()
 
-    # Plot each of the last 10 old data points with the time they were updated
+    # Plot the last 10 old data points with their respective timestamps first (oldest data first)
     for i, (old_data, timestamp) in enumerate(zip(previous_data_list, previous_timestamps)):
         old_status_counts = old_data["Prediction Status"].value_counts()
         old_color = next(colors)
         old_status_counts.plot(kind='bar', color=old_color, edgecolor='black', alpha=0.5, ax=ax, label=f"{timestamp}")
 
-    # Plot the new data in default color
-    new_status_counts.plot(kind='bar', color='skyblue', edgecolor='black', ax=ax, label="Current Data")
-    
+    # Fetch current timestamp
+    current_time = datetime.now().strftime("%H:%M:%S")
+
+    # Plot the new data on top, labelled with the current time
+    new_status_counts.plot(kind='bar', color='skyblue', edgecolor='black', ax=ax, label=current_time, zorder=10)
+
     # Customize the plot
     ax.set_title('Prediction Status Count (Last 10 Intervals)')
     ax.set_xlabel('Prediction Status')
@@ -325,7 +328,6 @@ def visualize_prediction_status(new_df, canvas, ax):
     canvas.draw()
 
     # Append the current data and its timestamp to previous_data_list
-    current_time = datetime.now().strftime("%H:%M:%S")
     previous_data_list.append(new_df.copy())
     previous_timestamps.append(current_time)
 
@@ -369,33 +371,28 @@ def on_close(root):
         root.after_cancel(after_id)  # Cancel any pending after() calls
     root.destroy()  # Close the window
 
-# Function to update the plot and reset the countdown timer manually
-def get_new_data(canvas, ax, label, df):
-    processed_data = process_symbols()  # Get the latest processed data
-    visualize_prediction_status(processed_data, canvas, ax)  # Update the plot
-    update_timer(label, 1800, canvas, ax, df)  # Reset the countdown timer
 
 # GUI setup with tkinter
 def create_gui(df):
     root = tk.Tk()
     root.title("Prediction Status Visualization")
     
-    # Create a frame for the "Save" button and canvas
+    # Create a frame for the buttons and canvas
     frame = tk.Frame(root)
     frame.pack(pady=20)
 
     # Countdown timer label
     timer_label = tk.Label(root, text="Next update in: 30:00", font=("Arial", 14))
     timer_label.pack(pady=10)
-    
+
     # "Save" button to download the current data using the provided save_grouped_by_signal_quality function
     save_button = tk.Button(frame, text="Save Current Data", command=lambda: save_file(df))
     save_button.pack(side=tk.LEFT, padx=10)
-    
-    # "Get Data" button to manually fetch new data and reset the countdown timer
-    get_data_button = tk.Button(frame, text="Get Data", command=lambda: get_new_data(canvas, ax, timer_label, df))
+
+    # "Get Data" button to fetch new data and update the plot
+    get_data_button = tk.Button(frame, text="Get Data", command=lambda: update_plot_with_new_data(canvas, ax))
     get_data_button.pack(side=tk.LEFT, padx=10)
-    
+
     # Create a larger figure (12x8) and an axis for the plot
     fig, ax = plt.subplots(figsize=(12, 8))  # Increased figure size
 
@@ -418,6 +415,13 @@ def create_gui(df):
 
     # Start the tkinter main loop
     root.mainloop()
+
+# Function to fetch new data and update the plot
+def update_plot_with_new_data(canvas, ax):
+    # Fetch new data using process_symbols
+    new_data = process_symbols()
+    # Update the plot with the newly fetched data
+    visualize_prediction_status(new_data, canvas, ax)
 
 # Assuming process_symbols returns the latest processed DataFrame
 processed_data = process_symbols()  # Process symbols to get the initial data
