@@ -293,7 +293,7 @@ colors = itertools.cycle(["red", "green", "blue", "orange", "purple", "brown", "
 # Variable to store the ID of the scheduled "after" call
 after_id = None
 
-# Function to plot the prediction status on a canvas and reset after 10 old data points
+# Function to plot the prediction status on a canvas
 def visualize_prediction_status(new_df, canvas, ax):
     global previous_data_list, previous_timestamps
 
@@ -326,15 +326,13 @@ def visualize_prediction_status(new_df, canvas, ax):
 
     # Append the current data and its timestamp to previous_data_list
     current_time = datetime.now().strftime("%H:%M:%S")
-    
-    # Reset the old data list after 10 updates
-    if len(previous_data_list) == 10:
-        previous_data_list.clear()  # Reset the list
-        previous_timestamps.clear()  # Reset the timestamps
-
-    # Add the new data and timestamp after reset
     previous_data_list.append(new_df.copy())
     previous_timestamps.append(current_time)
+
+    # Keep only the last 10 entries
+    if len(previous_data_list) > 10:
+        previous_data_list.pop(0)
+        previous_timestamps.pop(0)
 
 # Function to save the current DataFrame to an Excel file using save_grouped_by_signal_quality
 def save_file(df):
