@@ -96,12 +96,20 @@ def calculate_dmi_and_adx(highs, lows, closes, period=limit):
     tr = [max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])) for i in range(1, len(highs))]
     
     tr_sum = sum(tr[-period:])
-    plus_di = (sum(plus_dm[-period:]) / tr_sum) * 100
-    minus_di = (sum(minus_dm[-period:]) / tr_sum) * 100
-    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100 if (plus_di + minus_di) != 0 else 0
-    adx = sum([dx] * period) / period  # Approximation; replace with smoother ADX calculation if needed
+    
+    if tr_sum == 0:
+        # If tr_sum is zero, set default values to avoid division by zero
+        plus_di = 0
+        minus_di = 0
+        adx = 0
+    else:
+        plus_di = (sum(plus_dm[-period:]) / tr_sum) * 100
+        minus_di = (sum(minus_dm[-period:]) / tr_sum) * 100
+        dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100 if (plus_di + minus_di) != 0 else 0
+        adx = sum([dx] * period) / period  # Approximation; replace with smoother ADX calculation if needed
     
     return plus_di, minus_di, adx
+
 
 # Function to calculate Signal Quality
 def calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line):
@@ -335,6 +343,7 @@ def visualize_prediction_status(new_df, canvas, ax):
     if len(previous_data_list) > 10:
         previous_data_list.pop(0)
         previous_timestamps.pop(0)
+        previous_data_list = [] 
 
 # Function to save the current DataFrame to an Excel file using save_grouped_by_signal_quality
 def save_file(df):
