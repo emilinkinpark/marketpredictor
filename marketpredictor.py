@@ -290,7 +290,6 @@ def save_grouped_by_signal_quality(df):
     writer.close()
     return output_file
 
-""""""
 # Initialize previous data list to hold last 10 data points and their timestamps
 previous_data_list = []
 previous_timestamps = []
@@ -301,15 +300,21 @@ colors = itertools.cycle(["red", "green", "blue", "orange", "purple", "brown", "
 # Variable to store the ID of the scheduled "after" call
 after_id = None
 
-# Function to plot the prediction status on a canvas
 def visualize_prediction_status(new_df, canvas, ax):
     global previous_data_list, previous_timestamps
 
     # Clear the previous plot
     ax.clear()
 
-    # Get the counts for the new data
+    # Get the counts for new data
     new_status_counts = new_df["Prediction Status"].value_counts()
+
+    # Ensure we are keeping track of only the last 14 intervals
+    if len(previous_data_list) > 14:
+        print(f"Removing oldest data, current size of previous_data_list: {len(previous_data_list)}")
+        previous_data_list.pop(0)
+        previous_timestamps.pop(0)
+        ax.clear()
 
     # Plot the last 10 old data points with their respective timestamps first (oldest data first)
     for i, (old_data, timestamp) in enumerate(zip(previous_data_list, previous_timestamps)):
@@ -324,7 +329,7 @@ def visualize_prediction_status(new_df, canvas, ax):
     new_status_counts.plot(kind='bar', color='skyblue', edgecolor='black', ax=ax, label=current_time, zorder=10)
 
     # Customize the plot
-    ax.set_title('Prediction Status Count (Last 10 Intervals)')
+    ax.set_title('Prediction Status Count')
     ax.set_xlabel('Prediction Status')
     ax.set_ylabel('Count')
     ax.legend()
@@ -339,11 +344,7 @@ def visualize_prediction_status(new_df, canvas, ax):
     previous_data_list.append(new_df.copy())
     previous_timestamps.append(current_time)
 
-    # Keep only the last 10 entries
-    if len(previous_data_list) > 10:
-        previous_data_list.pop(0)
-        previous_timestamps.pop(0)
-        previous_data_list = [] 
+    print(f"Appended new data, current size of previous_data_list: {len(previous_data_list)}")
 
 # Function to save the current DataFrame to an Excel file using save_grouped_by_signal_quality
 def save_file(df):
