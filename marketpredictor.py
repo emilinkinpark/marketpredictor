@@ -399,8 +399,8 @@ def create_gui(df):
     save_button = tk.Button(frame, text="Save Current Data", command=lambda: save_file(df))
     save_button.pack(side=tk.LEFT, padx=10)
 
-    # "Get Data" button to fetch new data and update the plot
-    get_data_button = tk.Button(frame, text="Get Data", command=lambda: update_plot_with_new_data(canvas, ax))
+    # "Get Data" button to fetch new data, update the plot, and reset the timer
+    get_data_button = tk.Button(frame, text="Get Data", command=lambda: update_plot_with_new_data(canvas, ax, timer_label))
     get_data_button.pack(side=tk.LEFT, padx=10)
 
     # Create a larger figure (12x8) and an axis for the plot
@@ -427,11 +427,14 @@ def create_gui(df):
     root.mainloop()
 
 # Function to fetch new data and update the plot
-def update_plot_with_new_data(canvas, ax):
+def update_plot_with_new_data(canvas, ax, timer_label):
     # Fetch new data using process_symbols
     new_data = process_symbols()
     # Update the plot with the newly fetched data
     visualize_prediction_status(new_data, canvas, ax)
+    
+    # Reset the countdown timer to 30 minutes (1800 seconds)
+    update_timer(timer_label, 1800, canvas, ax, new_data)
 
 # Assuming process_symbols returns the latest processed DataFrame
 processed_data = process_symbols()  # Process symbols to get the initial data
