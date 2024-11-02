@@ -88,7 +88,7 @@ def calculate_atr(highs, lows, closes, period=limit):
 def calculate_cnd_rating(long_percent, short_percent):
     return (long_percent / (long_percent + short_percent)) * 10
 
-# Function to calculate DMI and ADX
+# Function to calculate DMI and ADX with EMA smoothing
 def calculate_dmi_and_adx(highs, lows, closes, period=limit):
     plus_dm = [max(highs[i] - highs[i - 1], 0) if (highs[i] - highs[i - 1]) > (lows[i - 1] - lows[i]) else 0 for i in range(1, len(highs))]
     minus_dm = [max(lows[i - 1] - lows[i], 0) if (lows[i - 1] - lows[i]) > (highs[i] - highs[i - 1]) else 0 for i in range(1, len(lows))]
@@ -105,11 +105,15 @@ def calculate_dmi_and_adx(highs, lows, closes, period=limit):
     else:
         plus_di = (sum(plus_dm[-period:]) / tr_sum) * 100
         minus_di = (sum(minus_dm[-period:]) / tr_sum) * 100
-        dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100 if (plus_di + minus_di) != 0 else 0
-        adx = sum([dx] * period) / period  # Approximation; replace with smoother ADX calculation if needed
+        dx = [(abs(plus_di - minus_di) / (plus_di + minus_di)) * 100 if (plus_di + minus_di) != 0 else 0 for _ in range(period)]
+        
+        # Apply an EMA for ADX calculation (smoothing)
+        multiplier = 2 / (period + 1)
+        adx = dx[0]  # Initial ADX value
+        for i in range(1, period):
+            adx = ((dx[i] - adx) * multiplier) + adx  # EMA formula for smoothing
     
     return plus_di, minus_di, adx
-
 
 # Function to calculate Signal Quality
 def calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line):
