@@ -8,6 +8,7 @@ from tkinter import filedialog
 import time
 import threading
 import itertools
+import tkinter.font as tkfont
 
 # Binance Futures API URLs for long/short data, kline data
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -16,7 +17,7 @@ EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 
 # Parameters for API requests
 interval = "1h"
-limit = 24
+limit = 30
 
 # Function to calculate RSI
 def calculate_rsi(prices):
@@ -145,7 +146,7 @@ def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_rat
     #print(f"Signal Quality: {signal_quality}, Percentage Change: {percentage_change:.2f}%, RSI: {rsi}, ATR: {atr}, ADX: {adx}, DI+: {di_plus}, DI-: {di_minus}, MACD Line: {macd_line}, Signal Line: {signal_line}")
 
     # Refine prediction using additional indicators
-    if adx > 25:  # Ensure the trend is strong
+    if adx > 18:  # Ensure the trend is strong
         if signal_quality == "4CR" and percentage_change > 3 and rsi < 40 and atr > 0.5 and di_plus > di_minus:
             return f"Strong Long (>3%)", profit_target
         elif signal_quality == "3CR" and 1.5 < percentage_change <= 3 and macd_line > signal_line and di_plus > di_minus:
@@ -236,12 +237,12 @@ def process_symbols():
             result = {
                 "Timestamp": timestamp,
                 "Symbol": symbol,
-                "Current Price": current_price,
                 "RSI": rsi,
                 "Long/Short Ratio": long_short_ratio,
                 "CND Rating": cnd_rating,
                 "Signal Quality": signal_quality,
                 "Prediction Status": prediction_status,
+                "Current Price": current_price,
                 "Profit Target": profit_target,
                 "Stop Loss": stop_loss,  # Include the calculated stop-loss in the result
                 "MACD Line": macd_line,
@@ -385,38 +386,78 @@ def on_close(root):
         root.after_cancel(after_id)  # Cancel any pending after() calls
     root.destroy()  # Close the window
 
+def update_top_coins_label(df, label):
+    """
+    Update the label to display the top 5 coins based on di_plus values.
+
+    Args:
+        df (pd.DataFrame): The DataFrame containing the latest data.
+        label (tk.Label): The Label widget to update.
+    """
+    # Sort the DataFrame by di_plus in descending order and get the top 5 coins
+    top_coins = df.sort_values(by="DI+", ascending=False).head(6)
+    
+    # Format the top coins as a string for display
+    top_coins_text = "\n".join([f"{row['Symbol']}: {row['DI+']:.2f}" for _, row in top_coins.iterrows()])
+    
+    # Update the label with the formatted text
+    label.config(text=f"{top_coins_text}")
 
 # GUI setup with tkinter
 def create_gui(df):
     root = tk.Tk()
     root.title("Prediction Status Visualization")
-    
-    # Create a frame for the buttons and canvas
-    frame = tk.Frame(root)
-    frame.pack(pady=20)
+
+    # Create a frame for the main layout
+    main_frame = tk.Frame(root)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+    # Create a frame for the buttons
+    button_frame = tk.Frame(root)
+    button_frame.pack(pady=10)
 
     # Countdown timer label
     timer_label = tk.Label(root, text="Next update in: 30:00", font=("Arial", 14))
     timer_label.pack(pady=10)
 
-    # "Save" button to download the current data using the provided save_grouped_by_signal_quality function
-    save_button = tk.Button(frame, text="Save Current Data", command=lambda: save_file(df))
+    # "Save" button to download the current data
+    save_button = tk.Button(button_frame, text="Save Current Data", command=lambda: save_file(df))
     save_button.pack(side=tk.LEFT, padx=10)
 
-    # "Get Data" button to fetch new data, update the plot, and reset the timer
-    get_data_button = tk.Button(frame, text="Get Data", command=lambda: update_plot_with_new_data(canvas, ax, timer_label))
+    # "Get Data" button to fetch new data
+    get_data_button = tk.Button(button_frame, text="Get Data", command=lambda: update_plot_with_new_data(canvas, ax, timer_label, top_coins_label))
     get_data_button.pack(side=tk.LEFT, padx=10)
 
-    # Create a larger figure (12x8) and an axis for the plot
-    fig, ax = plt.subplots(figsize=(12, 8))  # Increased figure size
+    # Create a frame for the plot
+    plot_frame = tk.Frame(main_frame)
+    plot_frame.pack(fill=tk.BOTH, expand=True)
+
+    # Create a matplotlib figure and axis for the plot
+    fig, ax = plt.subplots(figsize=(10, 8))  # Adjusted figure size
 
     # Embed the matplotlib figure in the tkinter window using FigureCanvasTkAgg
-    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas = FigureCanvasTkAgg(fig, master=plot_frame)
     canvas_widget = canvas.get_tk_widget()
-    canvas_widget.pack(pady=20)
+    canvas_widget.pack(fill=tk.BOTH, expand=True)
+
+    # Add the "Top 5 Coins by DI+" label and list to the right-middle of the graph
+    top_coins_frame = tk.Frame(plot_frame, width=200)
+    top_coins_frame.place(relx=0.85, rely=0.5, anchor="center")  # Positioned in the middle-right
+
+    # Add a bold label for "Top 5 Coins by DI+"
+    bold_font = tkfont.Font(family="Arial", size=12, weight="bold")
+    top_coins_title = tk.Label(top_coins_frame, text="Top 6 Coins by DI+", font=bold_font, anchor="w")
+    top_coins_title.pack()
+
+    # Add a label to display the list of top coins
+    top_coins_label = tk.Label(top_coins_frame, text="", font=("Arial", 12), justify=tk.LEFT, anchor="nw")
+    top_coins_label.pack()
 
     # Visualize the initial plot
     visualize_prediction_status(df, canvas, ax)
+    
+    # Update the top coins label with the initial data
+    update_top_coins_label(df, top_coins_label)
 
     # Start the countdown timer for 30 minutes (1800 seconds)
     update_timer(timer_label, 1800, canvas, ax, df)
@@ -425,17 +466,20 @@ def create_gui(df):
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(root))
 
     # Allow dynamic window resizing
-    root.geometry("1024x768")  # Set a minimum size for the window
+    root.geometry("1200x800")  # Set a larger initial window size
 
     # Start the tkinter main loop
     root.mainloop()
 
-# Function to fetch new data and update the plot
-def update_plot_with_new_data(canvas, ax, timer_label):
+# Modify the update_plot_with_new_data function to update the top coins label
+def update_plot_with_new_data(canvas, ax, timer_label, top_coins_label):
     # Fetch new data using process_symbols
     new_data = process_symbols()
     # Update the plot with the newly fetched data
     visualize_prediction_status(new_data, canvas, ax)
+    
+    # Update the top coins label with the latest data
+    update_top_coins_label(new_data, top_coins_label)
     
     # Reset the countdown timer to 30 minutes (1800 seconds)
     update_timer(timer_label, 1800, canvas, ax, new_data)
