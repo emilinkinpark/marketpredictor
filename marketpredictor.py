@@ -19,6 +19,7 @@ EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 interval = "1h"
 limit = 30
 
+
 # Function to calculate RSI
 def calculate_rsi(prices):
     deltas = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
@@ -77,8 +78,8 @@ def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
     long_ema = calculate_ema(prices, long_period)
     macd_line = short_ema - long_ema
     signal_line = calculate_ema([macd_line] * signal_period, signal_period)
-    macd_histogram = macd_line - signal_line
-    return macd_line, signal_line, macd_histogram
+    #macd_histogram = macd_line - signal_line
+    return macd_line, signal_line
 
 # Function to calculate ATR
 def calculate_atr(highs, lows, closes, period=limit):
@@ -128,7 +129,7 @@ def calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line):
         return "1CR"
 
 # Function to determine the Prediction Status
-def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_ratio, cnd_rating, macd_line, signal_line, macd_histogram, atr, di_plus, di_minus, adx, current_price, stop_loss, risk_reward_ratio=2):
+def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_ratio, cnd_rating, macd_line, signal_line,atr, di_plus, di_minus, adx, current_price, stop_loss, risk_reward_ratio=1):
     """
     Determine the prediction status using various indicators including MACD histogram, ATR, DMI, and ADX.
     """
@@ -164,6 +165,33 @@ def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_rat
     else:
         return "No Strong Trend", None
 
+# Function to fetch top_trader_ratio
+def fetch_top_trader_ratio(symbol):
+    """
+    Fetch the top trader long/short ratio (positions) for the given symbol.
+
+    Args:
+        symbol (str): The trading pair symbol (e.g., BTCUSDT).
+
+    Returns:
+        float: The latest top trader long/short ratio.
+    """
+    TOP_TRADER_RATIO_URL = "https://fapi.binance.com/futures/data/topLongShortPositionRatio"
+    params = {"symbol": symbol, "period": "30m", "limit": 1}  # 30-minute interval, latest data only
+
+    response = requests.get(TOP_TRADER_RATIO_URL, params=params)
+    if response.status_code == 200:
+        trader_data = response.json()
+        if len(trader_data) > 0:
+            return float(trader_data[-1]["longShortRatio"])
+        else:
+            return 0.0  # Default value if no data is available
+    else:
+        print(f"Error fetching top trader ratio for {symbol}: {response.status_code}")
+        return 0.0
+
+
+
 # Main symbol processing function
 def process_symbols():
     # Get all futures symbols
@@ -197,12 +225,15 @@ def process_symbols():
 
             current_price = closing_prices[-1]
 
-            macd_line, signal_line, macd_histogram = calculate_macd(closing_prices)
+            macd_line, signal_line = calculate_macd(closing_prices)
             atr = calculate_atr(highs, lows, closing_prices)
 
             di_plus, di_minus, adx = calculate_dmi_and_adx(highs, lows, closing_prices)
 
             signal_quality = calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line)
+
+            # Fetch top trader ratio
+            top_trader_ratio = fetch_top_trader_ratio(symbol)
 
             # Calculate the dynamic stop-loss using the new function
             stop_loss = calculate_dynamic_stop_loss(
@@ -222,7 +253,6 @@ def process_symbols():
                 cnd_rating=cnd_rating,
                 macd_line=macd_line,
                 signal_line=signal_line,
-                macd_histogram=macd_histogram,
                 atr=atr,
                 di_plus=di_plus,
                 di_minus=di_minus,
@@ -244,14 +274,15 @@ def process_symbols():
                 "Prediction Status": prediction_status,
                 "Current Price": current_price,
                 "Profit Target": profit_target,
-                "Stop Loss": stop_loss,  # Include the calculated stop-loss in the result
+                "Stop Loss": stop_loss,
                 "MACD Line": macd_line,
                 "Signal Line": signal_line,
-                "MACD Histogram": macd_histogram,
+                #"MACD Histogram": macd_histogram,
                 "ATR": atr,
                 "DI+": di_plus,
                 "DI-": di_minus,
-                "ADX": adx
+                "ADX": adx,
+                "Top Trader Ratio": top_trader_ratio  # Add top trader ratio
             }
 
             all_results.append(result)
@@ -367,17 +398,18 @@ def save_file(df):
         print(f"Data saved to {file_path}")
 
 # Function to update the countdown timer
-def update_timer(label, remaining_time, canvas, ax, df):
+def update_timer(label, remaining_time, canvas, ax, df, top_coins_label):
     global after_id  # Use a global variable to store the ID of the "after" call
     if remaining_time > 0:
         minutes, seconds = divmod(remaining_time, 60)
         label.config(text=f"Next update in: {minutes:02}:{seconds:02}")
-        after_id = label.after(1000, update_timer, label, remaining_time - 1, canvas, ax, df)
+        after_id = label.after(1000, update_timer, label, remaining_time - 1, canvas, ax, df, top_coins_label)
     else:
         # Time is up; update the plot and reset the timer
         processed_data = process_symbols()  # Get the latest processed data
         visualize_prediction_status(processed_data, canvas, ax)  # Update the plot in the GUI
-        update_timer(label, 1800, canvas, ax, df)  # Reset the countdown for another 30 minutes
+        update_top_coins_label(processed_data, top_coins_label)
+        update_timer(label, 1800, canvas, ax, df, top_coins_label)  # Reset the countdown for another 30 minutes
 
 # Function to cancel pending after() calls when the window is closed
 def on_close(root):
@@ -388,20 +420,23 @@ def on_close(root):
 
 def update_top_coins_label(df, label):
     """
-    Update the label to display the top 5 coins based on di_plus values.
+    Update the label to display the top 6 coins based on DI+ values with liquidation and top trader ratio data.
 
     Args:
         df (pd.DataFrame): The DataFrame containing the latest data.
         label (tk.Label): The Label widget to update.
     """
-    # Sort the DataFrame by di_plus in descending order and get the top 5 coins
+    # Sort the DataFrame by DI+ in descending order and get the top 6 coins
     top_coins = df.sort_values(by="DI+", ascending=False).head(6)
     
     # Format the top coins as a string for display
-    top_coins_text = "\n".join([f"{row['Symbol']}: {row['DI+']:.2f}" for _, row in top_coins.iterrows()])
+    top_coins_text = "\n".join([
+        f"{row['Symbol']}: DI+ {row['DI+']:.2f} | Trader Ratio: {row['Top Trader Ratio']:.2f}"
+        for _, row in top_coins.iterrows()
+    ])
     
     # Update the label with the formatted text
-    label.config(text=f"{top_coins_text}")
+    label.config(text=f"Top 6 Coins by DI+:\n{top_coins_text}")
 
 # GUI setup with tkinter
 def create_gui(df):
@@ -460,7 +495,7 @@ def create_gui(df):
     update_top_coins_label(df, top_coins_label)
 
     # Start the countdown timer for 30 minutes (1800 seconds)
-    update_timer(timer_label, 1800, canvas, ax, df)
+    update_timer(timer_label, 1800, canvas, ax, df,top_coins_label)
 
     # Set the protocol to handle window close event
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(root))
@@ -482,7 +517,8 @@ def update_plot_with_new_data(canvas, ax, timer_label, top_coins_label):
     update_top_coins_label(new_data, top_coins_label)
     
     # Reset the countdown timer to 30 minutes (1800 seconds)
-    update_timer(timer_label, 1800, canvas, ax, new_data)
+    update_timer(timer_label, 1800, canvas, ax, new_data, top_coins_label)
+
 
 # Assuming process_symbols returns the latest processed DataFrame
 processed_data = process_symbols()  # Process symbols to get the initial data
