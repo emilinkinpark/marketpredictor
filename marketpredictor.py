@@ -19,6 +19,7 @@ EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 interval = "1h"
 limit = 30
 
+print("Starting Market Predictor")
 
 # Function to calculate RSI
 def calculate_rsi(prices):
@@ -129,9 +130,15 @@ def calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line):
         return "1CR"
 
 # Function to determine the Prediction Status
-def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_ratio, cnd_rating, macd_line, signal_line,atr, di_plus, di_minus, adx, current_price, stop_loss, risk_reward_ratio=1):
+def calculate_prediction_status(
+    entry_price, signal_quality, rsi, long_short_ratio, cnd_rating, macd_line,
+    signal_line, atr, di_plus, di_minus, adx, current_price, stop_loss,
+    trader_ratio, risk_reward_ratio=1
+):
     """
-    Determine the prediction status using various indicators including MACD histogram, ATR, DMI, and ADX.
+    Determine the prediction status using various indicators including MACD, ATR, DMI, ADX, and Trader Ratio.
+    Args:
+        trader_ratio (float): Top trader long/short ratio (positions).
     """
     # Calculate percentage change between entry price and profit target
     risk = abs(entry_price - stop_loss)
@@ -143,23 +150,49 @@ def calculate_prediction_status(entry_price, signal_quality, rsi, long_short_rat
     else:
         percentage_change = ((entry_price - profit_target) / entry_price) * 100
 
-    # Debugging: Print the key values for inspection
-    #print(f"Signal Quality: {signal_quality}, Percentage Change: {percentage_change:.2f}%, RSI: {rsi}, ATR: {atr}, ADX: {adx}, DI+: {di_plus}, DI-: {di_minus}, MACD Line: {macd_line}, Signal Line: {signal_line}")
+    # Add Trader Ratio as a filter for prediction
+    if trader_ratio > 1.5:  # Top traders are predominantly long
+        trader_bias = "Long"
+    elif trader_ratio < 0.67:  # Top traders are predominantly short
+        trader_bias = "Short"
+    else:
+        trader_bias = "Neutral"
+
+    # Debugging: Print key values for inspection
+    # print(f"Signal Quality: {signal_quality}, Percentage Change: {percentage_change:.2f}%, RSI: {rsi}, ATR: {atr}, ADX: {adx}, DI+: {di_plus}, DI-: {di_minus}, Trader Ratio: {trader_ratio}")
 
     # Refine prediction using additional indicators
     if adx > 18:  # Ensure the trend is strong
         if signal_quality == "4CR" and percentage_change > 3 and rsi < 40 and atr > 0.5 and di_plus > di_minus:
-            return f"Strong Long (>3%)", profit_target
+            if trader_bias == "Long":
+                return f"Strong Long (>3%) (Biased)", profit_target
+            else:
+                return f"Strong Long (>3%)", profit_target
         elif signal_quality == "3CR" and 1.5 < percentage_change <= 3 and macd_line > signal_line and di_plus > di_minus:
-            return f"Moderate Long (1.5% - 3%)", profit_target
+            if trader_bias == "Long":
+                return f"Moderate Long (1.5% - 3%) (Biased)", profit_target
+            else:
+                return f"Moderate Long (1.5% - 3%)", profit_target
         elif signal_quality == "2CR" and 0 < percentage_change <= 1.5 and di_plus > di_minus:
-            return f"Weak Long (0% - 1.5%)", profit_target
+            if trader_bias == "Long":
+                return f"Weak Long (0% - 1.5%) (Biased)", profit_target
+            else:
+                return f"Weak Long (0% - 1.5%)", profit_target
         elif signal_quality == "4CR" and percentage_change > 3 and rsi > 60 and atr > 0.5 and di_minus > di_plus:
-            return f"Strong Short (>3%)", profit_target
+            if trader_bias == "Short":
+                return f"Strong Short (>3%) (Biased)", profit_target
+            else:
+                return f"Strong Short (>3%)", profit_target
         elif signal_quality == "3CR" and 1.5 < percentage_change <= 3 and macd_line < signal_line and di_minus > di_plus:
-            return f"Moderate Short (1.5% - 3%)", profit_target
+            if trader_bias == "Short":
+                return f"Moderate Short (1.5% - 3%) (Biased)", profit_target
+            else:
+                return f"Moderate Short (1.5% - 3%)", profit_target
         elif signal_quality == "2CR" and 0 < percentage_change <= 1.5 and di_minus > di_plus:
-            return f"Weak Short (0% - 1.5%)", profit_target
+            if trader_bias == "Short":
+                return f"Weak Short (0% - 1.5%) (Biased)", profit_target
+            else:
+                return f"Weak Short (0% - 1.5%)", profit_target
         else:
             return "Hold", None
     else:
@@ -258,7 +291,8 @@ def process_symbols():
                 di_minus=di_minus,
                 adx=adx,
                 current_price=current_price,
-                stop_loss=stop_loss
+                stop_loss=stop_loss,
+                trader_ratio=top_trader_ratio
             )
 
             # Adding a timestamp for the data collected
