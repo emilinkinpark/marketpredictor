@@ -1,6 +1,6 @@
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
@@ -16,7 +16,7 @@ KLINE_URL = "https://fapi.binance.com/fapi/v1/klines"
 EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 
 # Parameters for API requests
-interval = "1h"
+interval = "30m"
 limit = 30
 
 print("Starting Market Predictor")
@@ -41,37 +41,6 @@ def calculate_ema(prices, period):
         new_ema = (price - ema[-1]) * multiplier + ema[-1]
         ema.append(new_ema)
     return ema[-1]
-
-def calculate_dynamic_stop_loss(current_price, atr, adx, entry_price=None, stop_loss=None, use_trailing=False):
-    """
-    Calculate a dynamic stop-loss based on market volatility, trend strength, and optional trailing logic.
-
-    Args:
-        current_price (float): The current market price.
-        atr (float): Average True Range (ATR) indicating market volatility.
-        adx (float): Average Directional Index (ADX) indicating trend strength.
-        entry_price (float): Entry price of the trade, required for trailing stop-loss.
-        stop_loss (float): Current stop-loss value, used for trailing stop-loss logic.
-        use_trailing (bool): If True, use trailing stop-loss logic.
-
-    Returns:
-        float: Calculated dynamic stop-loss price.
-    """
-    # ATR-based stop-loss adjustment
-    if atr > 2 and adx > 25:
-        calculated_stop_loss = current_price - (2 * atr)  # Wider stop-loss for volatile and trending markets
-    elif atr < 1.5 or adx < 20:
-        calculated_stop_loss = current_price - (0.5 * atr)  # Tighter stop-loss for less volatile or non-trending markets
-    else:
-        calculated_stop_loss = current_price - (1 * atr)  # Standard stop-loss for moderate conditions
-
-    # Implement trailing stop-loss logic if enabled
-    if use_trailing and entry_price is not None and stop_loss is not None:
-        # Ensure the trailing stop-loss never decreases
-        trailing_stop_loss = max(stop_loss, current_price * (1 - 0.05))  # Example of 5% trailing stop-loss
-        calculated_stop_loss = max(calculated_stop_loss, trailing_stop_loss)  # Use the higher of the two stop-loss values
-
-    return calculated_stop_loss
 
 # Function to calculate MACD
 def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
@@ -129,75 +98,6 @@ def calculate_signal_quality(cnd_rating, rsi, macd_line, signal_line):
     else:
         return "1CR"
 
-# Function to determine the Prediction Status
-def calculate_prediction_status(
-    entry_price, signal_quality, rsi, long_short_ratio, cnd_rating, macd_line,
-    signal_line, atr, di_plus, di_minus, adx, current_price, stop_loss,
-    trader_ratio, risk_reward_ratio=1
-):
-    """
-    Determine the prediction status using various indicators including MACD, ATR, DMI, ADX, and Trader Ratio.
-    Args:
-        trader_ratio (float): Top trader long/short ratio (positions).
-    """
-    # Calculate percentage change between entry price and profit target
-    risk = abs(entry_price - stop_loss)
-    profit_target = entry_price + (risk * risk_reward_ratio) if signal_quality in ["4CR", "3CR"] else entry_price - (risk * risk_reward_ratio)
-
-    # Calculate the percentage change
-    if profit_target > entry_price:
-        percentage_change = ((profit_target - entry_price) / entry_price) * 100
-    else:
-        percentage_change = ((entry_price - profit_target) / entry_price) * 100
-
-    # Add Trader Ratio as a filter for prediction
-    if trader_ratio > 1.5:  # Top traders are predominantly long
-        trader_bias = "Long"
-    elif trader_ratio < 0.67:  # Top traders are predominantly short
-        trader_bias = "Short"
-    else:
-        trader_bias = "Neutral"
-
-    # Debugging: Print key values for inspection
-    # print(f"Signal Quality: {signal_quality}, Percentage Change: {percentage_change:.2f}%, RSI: {rsi}, ATR: {atr}, ADX: {adx}, DI+: {di_plus}, DI-: {di_minus}, Trader Ratio: {trader_ratio}")
-
-    # Refine prediction using additional indicators
-    if adx > 18:  # Ensure the trend is strong
-        if signal_quality == "4CR" and percentage_change > 3 and rsi < 40 and atr > 0.5 and di_plus > di_minus:
-            if trader_bias == "Long":
-                return f"Strong Long (>3%) (Biased)", profit_target
-            else:
-                return f"Strong Long (>3%)", profit_target
-        elif signal_quality == "3CR" and 1.5 < percentage_change <= 3 and macd_line > signal_line and di_plus > di_minus:
-            if trader_bias == "Long":
-                return f"Moderate Long (1.5% - 3%) (Biased)", profit_target
-            else:
-                return f"Moderate Long (1.5% - 3%)", profit_target
-        elif signal_quality == "2CR" and 0 < percentage_change <= 1.5 and di_plus > di_minus:
-            if trader_bias == "Long":
-                return f"Weak Long (0% - 1.5%) (Biased)", profit_target
-            else:
-                return f"Weak Long (0% - 1.5%)", profit_target
-        elif signal_quality == "4CR" and percentage_change > 3 and rsi > 60 and atr > 0.5 and di_minus > di_plus:
-            if trader_bias == "Short":
-                return f"Strong Short (>3%) (Biased)", profit_target
-            else:
-                return f"Strong Short (>3%)", profit_target
-        elif signal_quality == "3CR" and 1.5 < percentage_change <= 3 and macd_line < signal_line and di_minus > di_plus:
-            if trader_bias == "Short":
-                return f"Moderate Short (1.5% - 3%) (Biased)", profit_target
-            else:
-                return f"Moderate Short (1.5% - 3%)", profit_target
-        elif signal_quality == "2CR" and 0 < percentage_change <= 1.5 and di_minus > di_plus:
-            if trader_bias == "Short":
-                return f"Weak Short (0% - 1.5%) (Biased)", profit_target
-            else:
-                return f"Weak Short (0% - 1.5%)", profit_target
-        else:
-            return "Hold", None
-    else:
-        return "No Strong Trend", None
-
 # Function to fetch top_trader_ratio
 def fetch_top_trader_ratio(symbol):
     """
@@ -222,8 +122,6 @@ def fetch_top_trader_ratio(symbol):
     else:
         print(f"Error fetching top trader ratio for {symbol}: {response.status_code}")
         return 0.0
-
-
 
 # Main symbol processing function
 def process_symbols():
@@ -268,33 +166,6 @@ def process_symbols():
             # Fetch top trader ratio
             top_trader_ratio = fetch_top_trader_ratio(symbol)
 
-            # Calculate the dynamic stop-loss using the new function
-            stop_loss = calculate_dynamic_stop_loss(
-                current_price=current_price,
-                atr=atr,
-                adx=adx,
-                entry_price=current_price,
-                stop_loss=None,  # If there is no existing stop-loss, it defaults to a newly calculated stop-loss
-                use_trailing=False  # Set to True if you want to use trailing stop-loss logic
-            )
-
-            prediction_status, profit_target = calculate_prediction_status(
-                entry_price=current_price,
-                signal_quality=signal_quality,
-                rsi=rsi,
-                long_short_ratio=long_short_ratio,
-                cnd_rating=cnd_rating,
-                macd_line=macd_line,
-                signal_line=signal_line,
-                atr=atr,
-                di_plus=di_plus,
-                di_minus=di_minus,
-                adx=adx,
-                current_price=current_price,
-                stop_loss=stop_loss,
-                trader_ratio=top_trader_ratio
-            )
-
             # Adding a timestamp for the data collected
             timestamp = datetime.now().strftime("%H:%M:%S")
 
@@ -305,10 +176,7 @@ def process_symbols():
                 "Long/Short Ratio": long_short_ratio,
                 "CND Rating": cnd_rating,
                 "Signal Quality": signal_quality,
-                "Prediction Status": prediction_status,
                 "Current Price": current_price,
-                "Profit Target": profit_target,
-                "Stop Loss": stop_loss,
                 "MACD Line": macd_line,
                 "Signal Line": signal_line,
                 #"MACD Histogram": macd_histogram,
@@ -327,7 +195,7 @@ def process_symbols():
 # Function to save the grouped data by Signal Quality into an Excel file
 def save_grouped_by_signal_quality(df):
     current_time = datetime.now().strftime("%d%m%Y_%H%M")
-    output_file = f"Signals_{current_time}.xlsx"
+    output_file = f"{current_time}.xlsx"
     writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 
     # Create a summary per Signal Quality
@@ -336,14 +204,9 @@ def save_grouped_by_signal_quality(df):
         Avg_RSI=("RSI", "mean"),
         Avg_ATR=("ATR", "mean"),
         Avg_ADX=("ADX", "mean"),
+        Avg_DIplus=("DI+","mean"),
+        Avg_DImin=("DI-","mean"),
         Total_Trades=("Symbol", "count"),
-        Strong_Long=("Prediction Status", lambda x: (x == "Strong Long (>3%)").sum()),
-        Moderate_Long=("Prediction Status", lambda x: (x == "Moderate Long (1.5% - 3%)").sum()),
-        Weak_Long=("Prediction Status", lambda x: (x == "Weak Long (0% - 1.5%)").sum()),
-        Strong_Short=("Prediction Status", lambda x: (x == "Strong Short (>3%)").sum()),
-        Moderate_Short=("Prediction Status", lambda x: (x == "Moderate Short (1.5% - 3%)").sum()),
-        Weak_Short=("Prediction Status", lambda x: (x == "Weak Short (0% - 1.5%)").sum()),
-        Hold_Count=("Prediction Status", lambda x: (x == "Hold").sum())
     ).reset_index()
 
     # Write the Signal Quality summary to the leftmost sheet named "Summary"
@@ -360,202 +223,101 @@ def save_grouped_by_signal_quality(df):
     writer.close()
     return output_file
 
-# Initialize previous data list to hold last 10 data points and their timestamps
-previous_data_list = []
-previous_timestamps = []
+# Function to update data and refresh the GUI
+def update_data():
+    global new_df, top_15_stats, next_update_time
 
-# Colors for the last 10 intervals (cycling through colors)
-colors = itertools.cycle(["red", "green", "blue", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"])
+    # Fetch new data
+    df = process_symbols()
 
-# Variable to store the ID of the scheduled "after" call
-after_id = None
+    #Save the grouped data by Signal Quality into an Excel file
+    save_grouped_by_signal_quality(df)
+    # Top 6 coins by DI+ and DI-
+    top_di_plus = df.nlargest(6, "DI+")[["Symbol", "DI+"]]
+    top_di_minus = df.nlargest(6, "DI-")[["Symbol", "DI-"]]
 
-def visualize_prediction_status(new_df, canvas, ax):
-    global previous_data_list, previous_timestamps
+    # Update GUI for Top 6 Coins
+    for i, (symbol, di) in enumerate(top_di_plus.values):
+        top_di_plus_labels[i]["text"] = f"{symbol}: DI+ {di:.2f}"
+    for i, (symbol, di) in enumerate(top_di_minus.values):
+        top_di_minus_labels[i]["text"] = f"{symbol}: DI- {di:.2f}"
 
-    # Clear the previous plot
-    ax.clear()
+    # Calculate grouped statistics
+    grouped_stats_new = df.groupby("Signal Quality").agg({
+        "DI+": "mean",
+        "DI-": "mean",
+        "RSI": "mean"
+    }).rename(columns={"DI+": "Avg_DI+", "DI-": "Avg_DI-", "RSI": "Avg_RSI"})
 
-    # Get the counts for new data
-    new_status_counts = new_df["Prediction Status"].value_counts()
-
-    # Ensure we are keeping track of only the last 14 intervals
-    if len(previous_data_list) > 14:
-        print(f"Removing oldest data, current size of previous_data_list: {len(previous_data_list)}")
-        previous_data_list.pop(0)
-        previous_timestamps.pop(0)
-        ax.clear()
-
-    # Plot the last 10 old data points with their respective timestamps first (oldest data first)
-    for i, (old_data, timestamp) in enumerate(zip(previous_data_list, previous_timestamps)):
-        old_status_counts = old_data["Prediction Status"].value_counts()
-        old_color = next(colors)
-        old_status_counts.plot(kind='bar', color=old_color, edgecolor='black', alpha=0.5, ax=ax, label=f"{timestamp}")
-
-    # Fetch current timestamp
+    # Prepare new stats string
     current_time = datetime.now().strftime("%H:%M:%S")
-
-    # Plot the new data on top, labelled with the current time
-    new_status_counts.plot(kind='bar', color='skyblue', edgecolor='black', ax=ax, label=current_time, zorder=10)
-
-    # Customize the plot
-    ax.set_title('Prediction Status Count')
-    ax.set_xlabel('Prediction Status')
-    ax.set_ylabel('Count')
-    ax.legend()
-
-    # Apply tight layout to prevent cropping
-    plt.tight_layout()
-
-    # Refresh the canvas to show the updated plot
-    canvas.draw()
-
-    # Append the current data and its timestamp to previous_data_list
-    previous_data_list.append(new_df.copy())
-    previous_timestamps.append(current_time)
-
-    print(f"Appended new data, current size of previous_data_list: {len(previous_data_list)}")
-
-# Function to save the current DataFrame to an Excel file using save_grouped_by_signal_quality
-def save_file(df):
-    # Open a file dialog to let the user choose the save location
-    file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", 
-                                             filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
-    
-    if file_path:  # If the user selects a file path
-        # Save the DataFrame to the selected location
-        output_file = save_grouped_by_signal_quality(df)
-        
-        # Rename and move the file to the selected location
-        import shutil
-        shutil.move(output_file, file_path)
-        print(f"Data saved to {file_path}")
-
-# Function to update the countdown timer
-def update_timer(label, remaining_time, canvas, ax, df, top_coins_label):
-    global after_id  # Use a global variable to store the ID of the "after" call
-    if remaining_time > 0:
-        minutes, seconds = divmod(remaining_time, 60)
-        label.config(text=f"Next update in: {minutes:02}:{seconds:02}")
-        after_id = label.after(1000, update_timer, label, remaining_time - 1, canvas, ax, df, top_coins_label)
-    else:
-        # Time is up; update the plot and reset the timer
-        processed_data = process_symbols()  # Get the latest processed data
-        visualize_prediction_status(processed_data, canvas, ax)  # Update the plot in the GUI
-        update_top_coins_label(processed_data, top_coins_label)
-        update_timer(label, 1800, canvas, ax, df, top_coins_label)  # Reset the countdown for another 30 minutes
-
-# Function to cancel pending after() calls when the window is closed
-def on_close(root):
-    global after_id
-    if after_id is not None:
-        root.after_cancel(after_id)  # Cancel any pending after() calls
-    root.destroy()  # Close the window
-
-def update_top_coins_label(df, label):
-    """
-    Update the label to display the top 6 coins based on DI+ values with liquidation and top trader ratio data.
-
-    Args:
-        df (pd.DataFrame): The DataFrame containing the latest data.
-        label (tk.Label): The Label widget to update.
-    """
-    # Sort the DataFrame by DI+ in descending order and get the top 6 coins
-    top_coins = df.sort_values(by="DI+", ascending=False).head(6)
-    
-    # Format the top coins as a string for display
-    top_coins_text = "\n".join([
-        f"{row['Symbol']}: DI+ {row['DI+']:.2f} | Trader Ratio: {row['Top Trader Ratio']:.2f}"
-        for _, row in top_coins.iterrows()
+    stats_label_new = f"{current_time} | " + " | ".join([
+        f"{quality}: DI+ {row['Avg_DI+']:.2f}, DI- {row['Avg_DI-']:.2f}, RSI {row['Avg_RSI']:.2f}"
+        for quality, row in grouped_stats_new.iterrows()
     ])
-    
-    # Update the label with the formatted text
-    label.config(text=f"Top 6 Coins by DI+:\n{top_coins_text}")
 
-# GUI setup with tkinter
-def create_gui(df):
-    root = tk.Tk()
-    root.title("Prediction Status Visualization")
+    # Maintain only the top 15 stats
+    if len(top_15_stats) >= 15:
+        top_15_stats.pop(0)
+    top_15_stats.append(stats_label_new)
 
-    # Create a frame for the main layout
-    main_frame = tk.Frame(root)
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+    # Update GUI for Grouped Stats
+    stats_listbox.delete(0, tk.END)
+    for stat in top_15_stats:
+        stats_listbox.insert(tk.END, stat)
 
-    # Create a frame for the buttons
-    button_frame = tk.Frame(root)
-    button_frame.pack(pady=10)
-
-    # Countdown timer label
-    timer_label = tk.Label(root, text="Next update in: 30:00", font=("Arial", 14))
-    timer_label.pack(pady=10)
-
-    # "Save" button to download the current data
-    save_button = tk.Button(button_frame, text="Save Current Data", command=lambda: save_file(df))
-    save_button.pack(side=tk.LEFT, padx=10)
-
-    # "Get Data" button to fetch new data
-    get_data_button = tk.Button(button_frame, text="Get Data", command=lambda: update_plot_with_new_data(canvas, ax, timer_label, top_coins_label))
-    get_data_button.pack(side=tk.LEFT, padx=10)
-
-    # Create a frame for the plot
-    plot_frame = tk.Frame(main_frame)
-    plot_frame.pack(fill=tk.BOTH, expand=True)
-
-    # Create a matplotlib figure and axis for the plot
-    fig, ax = plt.subplots(figsize=(10, 8))  # Adjusted figure size
-
-    # Embed the matplotlib figure in the tkinter window using FigureCanvasTkAgg
-    canvas = FigureCanvasTkAgg(fig, master=plot_frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.pack(fill=tk.BOTH, expand=True)
-
-    # Add the "Top 5 Coins by DI+" label and list to the right-middle of the graph
-    top_coins_frame = tk.Frame(plot_frame, width=200)
-    top_coins_frame.place(relx=0.85, rely=0.5, anchor="center")  # Positioned in the middle-right
-
-    # Add a bold label for "Top 5 Coins by DI+"
-    bold_font = tkfont.Font(family="Arial", size=12, weight="bold")
-    top_coins_title = tk.Label(top_coins_frame, text="Top 6 Coins by DI+", font=bold_font, anchor="w")
-    top_coins_title.pack()
-
-    # Add a label to display the list of top coins
-    top_coins_label = tk.Label(top_coins_frame, text="", font=("Arial", 12), justify=tk.LEFT, anchor="nw")
-    top_coins_label.pack()
-
-    # Visualize the initial plot
-    visualize_prediction_status(df, canvas, ax)
-    
-    # Update the top coins label with the initial data
-    update_top_coins_label(df, top_coins_label)
-
-    # Start the countdown timer for 30 minutes (1800 seconds)
-    update_timer(timer_label, 1800, canvas, ax, df,top_coins_label)
-
-    # Set the protocol to handle window close event
-    root.protocol("WM_DELETE_WINDOW", lambda: on_close(root))
-
-    # Allow dynamic window resizing
-    root.geometry("1200x800")  # Set a larger initial window size
-
-    # Start the tkinter main loop
-    root.mainloop()
-
-# Modify the update_plot_with_new_data function to update the top coins label
-def update_plot_with_new_data(canvas, ax, timer_label, top_coins_label):
-    # Fetch new data using process_symbols
-    new_data = process_symbols()
-    # Update the plot with the newly fetched data
-    visualize_prediction_status(new_data, canvas, ax)
-    
-    # Update the top coins label with the latest data
-    update_top_coins_label(new_data, top_coins_label)
-    
-    # Reset the countdown timer to 30 minutes (1800 seconds)
-    update_timer(timer_label, 1800, canvas, ax, new_data, top_coins_label)
+    # Update the next update time
+    next_update_time = datetime.now() + timedelta(minutes=30)
+    update_timer()
+    # Schedule the next update
+    root.after(30 * 60 * 1000, update_data)  # 30 minutes
 
 
-# Assuming process_symbols returns the latest processed DataFrame
-processed_data = process_symbols()  # Process symbols to get the initial data
+# Function to update the countdown timer for the next update
+def update_timer():
+    global next_update_time
 
-# Start the GUI
-create_gui(processed_data)
+    if next_update_time:
+        remaining_time = next_update_time - datetime.now()
+        if remaining_time.total_seconds() > 0:
+            timer_label["text"] = f"Next update in: {remaining_time.seconds // 60}m {remaining_time.seconds % 60}s"
+            root.after(1000, update_timer)  # Update every second
+        else:
+            timer_label["text"] = "Updating now..."
+
+
+# Create GUI
+root = tk.Tk()
+root.title("Market Predictor")
+
+# Top 6 Coins by DI+
+tk.Label(root, text="Top 6 Coins by DI+:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=10, pady=5)
+top_di_plus_labels = [tk.Label(root, text="", font=("Arial", 10)) for _ in range(6)]
+for i, label in enumerate(top_di_plus_labels):
+    label.grid(row=i + 1, column=0, sticky="w", padx=10)
+
+# Top 6 Coins by DI-
+tk.Label(root, text="Top 6 Coins by DI-:", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=10, pady=5)
+top_di_minus_labels = [tk.Label(root, text="", font=("Arial", 10)) for _ in range(6)]
+for i, label in enumerate(top_di_minus_labels):
+    label.grid(row=i + 1, column=1, sticky="w", padx=10)
+
+# Grouped Statistics
+tk.Label(root, text="Recent Grouped Statistics (Last 15):", font=("Arial", 12, "bold")).grid(row=7, column=0, columnspan=2, pady=10)
+stats_listbox = tk.Listbox(root, width=100, height=15, font=("Courier", 10))
+stats_listbox.grid(row=8, column=0, columnspan=2, padx=10, pady=5)
+
+# Countdown Timer for Next Update
+timer_label = tk.Label(root, text="Next update in: 30m 0s", font=("Arial", 12, "bold"), fg="blue")
+timer_label.grid(row=9, column=0, columnspan=2, pady=10)
+
+# Initialize variables
+new_df = pd.DataFrame()
+top_15_stats = []
+next_update_time = None
+
+# Start data update
+update_data()
+
+# Run the GUI event loop
+root.mainloop()
