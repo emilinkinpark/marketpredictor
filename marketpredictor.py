@@ -272,7 +272,6 @@ def update_data():
     # Schedule the next update
     root.after(30 * 60 * 1000, update_data)  # 30 minutes
 
-
 # Function to update the countdown timer for the next update
 def update_timer():
     global next_update_time
@@ -284,7 +283,6 @@ def update_timer():
             root.after(1000, update_timer)  # Update every second
         else:
             timer_label["text"] = "Updating now..."
-
 
 # Create GUI
 root = tk.Tk()
