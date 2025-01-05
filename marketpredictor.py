@@ -174,17 +174,17 @@ def process_symbols():
                 "Symbol": symbol,
                 "RSI": rsi,
                 "Long/Short Ratio": long_short_ratio,
+                "Top Trader Ratio": top_trader_ratio,  
                 "CND Rating": cnd_rating,
                 "Signal Quality": signal_quality,
                 "Current Price": current_price,
                 "MACD Line": macd_line,
-                "Signal Line": signal_line,
+                #"Signal Line": signal_line,
                 #"MACD Histogram": macd_histogram,
                 "ATR": atr,
                 "DI+": di_plus,
                 "DI-": di_minus,
-                "ADX": adx,
-                "Top Trader Ratio": top_trader_ratio  # Add top trader ratio
+                "ADX": adx
             }
 
             all_results.append(result)
@@ -204,13 +204,40 @@ def save_grouped_by_signal_quality(df):
         Avg_RSI=("RSI", "mean"),
         Avg_ATR=("ATR", "mean"),
         Avg_ADX=("ADX", "mean"),
-        Avg_DIplus=("DI+","mean"),
-        Avg_DImin=("DI-","mean"),
+        Avg_DIplus=("DI+", "mean"),
+        Avg_DImin=("DI-", "mean"),
         Total_Trades=("Symbol", "count"),
     ).reset_index()
 
     # Write the Signal Quality summary to the leftmost sheet named "Summary"
-    summary.to_excel(writer, sheet_name="Summary", index=False)
+    summary.to_excel(writer, sheet_name="Summary", index=False, startrow=0)
+
+    # Find the top 6 coins by DI+ and DI-
+    top_di_plus = df.nlargest(6, "DI+")[["Symbol", "DI+"]].reset_index(drop=True)
+    top_di_minus = df.nlargest(6, "DI-")[["Symbol", "DI-"]].reset_index(drop=True)
+
+    # Write the top 6 DI+ coins below the summary
+    top_di_plus_startrow = len(summary) + 3  # Leave some space below the summary
+    top_di_plus.to_excel(
+        writer,
+        sheet_name="Summary",
+        index=False,
+        startrow=top_di_plus_startrow,
+        startcol=0,
+    )
+    worksheet = writer.sheets["Summary"]
+    worksheet.write(top_di_plus_startrow - 1, 0, "Top 6 Coins by DI+")
+
+    # Write the top 6 DI- coins below the top DI+ table
+    top_di_minus_startrow = top_di_plus_startrow + len(top_di_plus) + 3
+    top_di_minus.to_excel(
+        writer,
+        sheet_name="Summary",
+        index=False,
+        startrow=top_di_minus_startrow,
+        startcol=0,
+    )
+    worksheet.write(top_di_minus_startrow - 1, 0, "Top 6 Coins by DI-")
 
     ## Create Individual Coin data per Signal Quality
     signal_qualities = df["Signal Quality"].unique()
@@ -252,7 +279,7 @@ def update_data():
     # Prepare new stats string
     current_time = datetime.now().strftime("%H:%M:%S")
     stats_label_new = f"{current_time} | " + " | ".join([
-        f"{quality}: DI+ {row['Avg_DI+']:.2f}, DI- {row['Avg_DI-']:.2f}, RSI {row['Avg_RSI']:.2f}"
+        f"{quality}: DI+ {row['Avg_DI+']:.2f} DI- {row['Avg_DI-']:.2f} RSI {row['Avg_RSI']:.2f}"
         for quality, row in grouped_stats_new.iterrows()
     ])
 
@@ -302,7 +329,7 @@ for i, label in enumerate(top_di_minus_labels):
 
 # Grouped Statistics
 tk.Label(root, text="Recent Grouped Statistics (Last 15):", font=("Arial", 12, "bold")).grid(row=7, column=0, columnspan=2, pady=10)
-stats_listbox = tk.Listbox(root, width=100, height=15, font=("Courier", 10))
+stats_listbox = tk.Listbox(root, width=125, height=15, font=("Courier", 10))
 stats_listbox.grid(row=8, column=0, columnspan=2, padx=10, pady=5)
 
 # Countdown Timer for Next Update
