@@ -213,8 +213,13 @@ def save_grouped_by_signal_quality(df):
     summary.to_excel(writer, sheet_name="Summary", index=False, startrow=0)
 
     # Find the top 6 coins by DI+ and DI-
-    top_di_plus = df.nlargest(6, "DI+")[["Symbol", "DI+"]].reset_index(drop=True)
-    top_di_minus = df.nlargest(6, "DI-")[["Symbol", "DI-"]].reset_index(drop=True)
+    top_di_plus = df.nlargest(6, "DI+")[
+        ["Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio", "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR", "DI+", "DI-", "ADX"]
+    ].reset_index(drop=True)
+
+    top_di_minus = df.nlargest(6, "DI-")[
+        ["Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio", "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR", "DI+", "DI-", "ADX"]
+    ].reset_index(drop=True)
 
     # Write the top 6 DI+ coins below the summary
     top_di_plus_startrow = len(summary) + 3  # Leave some space below the summary
@@ -226,7 +231,7 @@ def save_grouped_by_signal_quality(df):
         startcol=0,
     )
     worksheet = writer.sheets["Summary"]
-    worksheet.write(top_di_plus_startrow - 1, 0, "Top 6 Coins by DI+")
+    worksheet.write(top_di_plus_startrow - 1, 0, "Top 6 Coins by DI+ with Details")
 
     # Write the top 6 DI- coins below the top DI+ table
     top_di_minus_startrow = top_di_plus_startrow + len(top_di_plus) + 3
@@ -237,7 +242,7 @@ def save_grouped_by_signal_quality(df):
         startrow=top_di_minus_startrow,
         startcol=0,
     )
-    worksheet.write(top_di_minus_startrow - 1, 0, "Top 6 Coins by DI-")
+    worksheet.write(top_di_minus_startrow - 1, 0, "Top 6 Coins by DI- with Details")
 
     ## Create Individual Coin data per Signal Quality
     signal_qualities = df["Signal Quality"].unique()
