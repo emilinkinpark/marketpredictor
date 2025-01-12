@@ -213,15 +213,15 @@ def save_grouped_by_signal_quality(df):
     summary.to_excel(writer, sheet_name="Summary", index=False, startrow=0)
 
     # Find the top 6 coins by DI+ and DI-
-    top_di_plus = df.nlargest(6, "DI+")[
+    top_di_plus = df.nlargest(10, "DI+")[
         ["Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio", "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR", "DI+", "DI-", "ADX"]
     ].reset_index(drop=True)
 
-    top_di_minus = df.nlargest(6, "DI-")[
+    top_di_minus = df.nlargest(10, "DI-")[
         ["Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio", "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR", "DI+", "DI-", "ADX"]
     ].reset_index(drop=True)
 
-    # Write the top 6 DI+ coins below the summary
+    # Write the top 10 DI+ coins below the summary
     top_di_plus_startrow = len(summary) + 3  # Leave some space below the summary
     top_di_plus.to_excel(
         writer,
@@ -231,9 +231,9 @@ def save_grouped_by_signal_quality(df):
         startcol=0,
     )
     worksheet = writer.sheets["Summary"]
-    worksheet.write(top_di_plus_startrow - 1, 0, "Top 6 Coins by DI+ with Details")
+    worksheet.write(top_di_plus_startrow - 1, 0, "Top 10 Coins by DI+ with Details")
 
-    # Write the top 6 DI- coins below the top DI+ table
+    # Write the top 10 DI- coins below the top DI+ table
     top_di_minus_startrow = top_di_plus_startrow + len(top_di_plus) + 3
     top_di_minus.to_excel(
         writer,
@@ -242,7 +242,7 @@ def save_grouped_by_signal_quality(df):
         startrow=top_di_minus_startrow,
         startcol=0,
     )
-    worksheet.write(top_di_minus_startrow - 1, 0, "Top 6 Coins by DI- with Details")
+    worksheet.write(top_di_minus_startrow - 1, 0, "Top 10 Coins by DI- with Details")
 
     ## Create Individual Coin data per Signal Quality
     signal_qualities = df["Signal Quality"].unique()
@@ -257,22 +257,22 @@ def save_grouped_by_signal_quality(df):
 
 # Function to update data and refresh the GUI
 def update_data():
-    global new_df, top_15_stats, next_update_time
+    global new_df, top_30_stats, next_update_time
 
     # Fetch new data
     df = process_symbols()
 
     #Save the grouped data by Signal Quality into an Excel file
     save_grouped_by_signal_quality(df)
-    # Top 6 coins by DI+ and DI-
-    top_di_plus = df.nlargest(6, "DI+")[["Symbol", "DI+"]]
-    top_di_minus = df.nlargest(6, "DI-")[["Symbol", "DI-"]]
+    # Update GUI for Top 10 Coins
+    top_di_plus = df.nlargest(10, "DI+")[["Symbol", "DI+"]]
+    top_di_minus = df.nlargest(10, "DI-")[["Symbol", "DI-"]]
 
-    # Update GUI for Top 6 Coins
     for i, (symbol, di) in enumerate(top_di_plus.values):
         top_di_plus_labels[i]["text"] = f"{symbol}: DI+ {di:.2f}"
     for i, (symbol, di) in enumerate(top_di_minus.values):
         top_di_minus_labels[i]["text"] = f"{symbol}: DI- {di:.2f}"
+
 
     # Calculate grouped statistics
     grouped_stats_new = df.groupby("Signal Quality").agg({
@@ -288,14 +288,14 @@ def update_data():
         for quality, row in grouped_stats_new.iterrows()
     ])
 
-    # Maintain only the top 15 stats
-    if len(top_15_stats) >= 15:
-        top_15_stats.pop(0)
-    top_15_stats.append(stats_label_new)
+    # Maintain only the top 30 stats
+    if len(top_30_stats) >= 30:  # Adjusted to 30 entries
+        top_30_stats.pop(0)
+    top_30_stats.append(stats_label_new)
 
     # Update GUI for Grouped Stats
     stats_listbox.delete(0, tk.END)
-    for stat in top_15_stats:
+    for stat in top_30_stats:
         stats_listbox.insert(tk.END, stat)
 
     # Update the next update time
@@ -320,30 +320,30 @@ def update_timer():
 root = tk.Tk()
 root.title("Market Predictor")
 
-# Top 6 Coins by DI+
-tk.Label(root, text="Top 6 Coins by DI+:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=10, pady=5)
-top_di_plus_labels = [tk.Label(root, text="", font=("Arial", 10)) for _ in range(6)]
+# Top 10 Coins by DI+ Labels
+tk.Label(root, text="Top 10 Coins by DI+:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=10, pady=5)
+top_di_plus_labels = [tk.Label(root, text="", font=("Arial", 10)) for _ in range(10)]
 for i, label in enumerate(top_di_plus_labels):
     label.grid(row=i + 1, column=0, sticky="w", padx=10)
 
-# Top 6 Coins by DI-
-tk.Label(root, text="Top 6 Coins by DI-:", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=10, pady=5)
-top_di_minus_labels = [tk.Label(root, text="", font=("Arial", 10)) for _ in range(6)]
+# Top 10 Coins by DI- Labels
+tk.Label(root, text="Top 10 Coins by DI-:", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=10, pady=5)
+top_di_minus_labels = [tk.Label(root, text="", font=("Arial", 10)) for _ in range(10)]
 for i, label in enumerate(top_di_minus_labels):
     label.grid(row=i + 1, column=1, sticky="w", padx=10)
 
-# Grouped Statistics
-tk.Label(root, text="Recent Grouped Statistics (Last 15):", font=("Arial", 12, "bold")).grid(row=7, column=0, columnspan=2, pady=10)
-stats_listbox = tk.Listbox(root, width=125, height=15, font=("Courier", 10))
-stats_listbox.grid(row=8, column=0, columnspan=2, padx=10, pady=5)
+# Grouped Statistics - Adjusted to 30 Entries
+tk.Label(root, text="Recent Grouped Statistics (Last 30):", font=("Arial", 12, "bold")).grid(row=12, column=0, columnspan=2, pady=10)
+stats_listbox = tk.Listbox(root, width=125, height=30, font=("Courier", 10))
+stats_listbox.grid(row=13, column=0, columnspan=2, padx=10, pady=5)
 
 # Countdown Timer for Next Update
 timer_label = tk.Label(root, text="Next update in: 30m 0s", font=("Arial", 12, "bold"), fg="blue")
-timer_label.grid(row=9, column=0, columnspan=2, pady=10)
+timer_label.grid(row=11, column=0, columnspan=2, pady=10)
 
 # Initialize variables
 new_df = pd.DataFrame()
-top_15_stats = []
+top_30_stats = []
 next_update_time = None
 
 # Start data update
