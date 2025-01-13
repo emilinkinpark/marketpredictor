@@ -9,6 +9,7 @@ import time
 import threading
 import itertools
 import tkinter.font as tkfont
+from ftplib import FTP
 
 # Binance Futures API URLs for long/short data, kline data
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -251,8 +252,25 @@ def save_grouped_by_signal_quality(df):
         df_quality = df[df["Signal Quality"] == quality]
         df_quality.to_excel(writer, sheet_name=str(quality), index=False)
 
-    # Save the Excel file
+    # Save the Excel file locally
     writer.close()
+
+    # Upload the file to the FTP server
+    ftp_host = "192.168.1.1"
+    ftp_user = "admin"  # Replace with your FTP username
+    ftp_pass = "admin"  # Replace with your FTP password
+    ftp_path = "/volume(sda2)/Data/"
+
+    try:
+        with FTP(ftp_host) as ftp:
+            ftp.login(user=ftp_user, passwd=ftp_pass)
+            ftp.cwd(ftp_path)  # Change to the target directory
+            with open(output_file, "rb") as file:
+                ftp.storbinary(f"STOR {output_file}", file)  # Upload the file
+            print(f"File {output_file} uploaded successfully to {ftp_path}")
+    except Exception as e:
+        print(f"FTP upload failed: {e}")
+
     return output_file
 
 # Function to update data and refresh the GUI
