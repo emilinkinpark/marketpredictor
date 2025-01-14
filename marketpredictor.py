@@ -11,6 +11,8 @@ import itertools
 import tkinter.font as tkfont
 from ftplib import FTP
 
+
+
 # Binance Futures API URLs for long/short data, kline data
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
 KLINE_URL = "https://fapi.binance.com/fapi/v1/klines"
@@ -273,6 +275,35 @@ def save_grouped_by_signal_quality(df):
 
     return output_file
 
+
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import SYNCHRONOUS
+
+ # Configuration for InfluxDB
+INFLUXDB_URL = "http://192.168.1.114:8086/"  # Replace with your InfluxDB URL
+INFLUXDB_TOKEN = "djVUB6UCtjkfi42skF9_VMeGAgCA_Mi7Y9_WarFS7Dm8ydn2QD5FyyKyjrndxjnhAGn5VMHLM1HKvCb9rRcP4Q=="
+INFLUXDB_ORG = "test"
+INFLUXDB_BUCKET = "test"
+
+# Function to write data to InfluxDB
+def write_to_influxdb(grouped_stats):
+    try:
+        with InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG) as client:
+            write_api = client.write_api(write_options=SYNCHRONOUS)
+
+            for quality, row in grouped_stats.iterrows():
+                point = Point("group_statistics") \
+                    .tag("Signal_Quality", quality) \
+                    .field("Avg_DI+", row["Avg_DI+"]) \
+                    .field("Avg_DI-", row["Avg_DI-"]) \
+                    .field("Avg_RSI", row["Avg_RSI"]) \
+                    .time(datetime.utcnow())  # Use UTC timestamp for consistency
+                write_api.write(bucket=INFLUXDB_BUCKET, record=point)
+
+            print("Grouped statistics successfully written to InfluxDB.")
+    except Exception as e:
+        print(f"Failed to write to InfluxDB: {e}")
+
 # Function to update data and refresh the GUI
 def update_data():
     global new_df, top_30_stats, next_update_time
@@ -298,6 +329,9 @@ def update_data():
         "DI-": "mean",
         "RSI": "mean"
     }).rename(columns={"DI+": "Avg_DI+", "DI-": "Avg_DI-", "RSI": "Avg_RSI"})
+
+    # Send grouped statistics to InfluxDB
+    write_to_influxdb(grouped_stats_new)
 
     # Prepare new stats string
     current_time = datetime.now().strftime("%H:%M:%S")
