@@ -10,13 +10,58 @@ import threading
 import itertools
 import tkinter.font as tkfont
 from ftplib import FTP
+import logging
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    filename="binance_api.log",
+    filemode="a",  # Append mode
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-
-# Binance Futures API URLs for long/short data, kline data
+# Binance API URLs
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
 KLINE_URL = "https://fapi.binance.com/fapi/v1/klines"
 EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+
+# Retry mechanism with exponential backoff
+def fetch_data(url, params=None, retries=100):
+    for attempt in range(retries):
+        try:
+            #logging.info(f"Fetching data from {url} with params: {params}")
+            response = requests.get(url, params=params, timeout=10)  # 10 seconds timeout
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx, 5xx)
+            logging.info(f"Successful response from {url}")
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching data from {url}: {e}")
+            if attempt < retries - 1:
+                sleep_time = 2 ** attempt  # Exponential backoff
+                logging.warning(f"Retrying in {sleep_time} seconds... (Attempt {attempt + 1}/{retries})")
+                time.sleep(sleep_time)
+            else:
+                logging.critical(f"Max retries reached. Could not fetch data from {url}")
+                raise
+
+# Test all three URLs
+try:
+    # Fetch Long/Short Ratio data
+    params_lsr = {"symbol": "BTCUSDT", "period": "5m", "limit": 30}
+    lsr_data = fetch_data(LSR_URL, params=params_lsr)
+    logging.info(f"Long/Short Ratio Data: {lsr_data}")
+
+    # Fetch Kline data
+    params_kline = {"symbol": "BTCUSDT", "interval": "30m", "limit": 30}
+    kline_data = fetch_data(KLINE_URL, params=params_kline)
+    logging.info(f"Kline Data: {kline_data}")
+
+    # Fetch Exchange Info
+    exchange_info_data = fetch_data(EXCHANGE_INFO_URL)
+    logging.info(f"Exchange Info Data: {exchange_info_data}")
+
+except Exception as e:
+    logging.critical(f"Failed to fetch data: {e}")
 
 # Parameters for API requests
 interval = "30m"
