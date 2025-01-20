@@ -12,6 +12,8 @@ import tkinter.font as tkfont
 from ftplib import FTP
 import logging
 
+DataInterval = 10 #Insert Data Collection Interval in minutes.
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -237,6 +239,9 @@ def process_symbols():
 
             all_results.append(result)
 
+        # Write symbol data to InfluxDB
+        write_symbol_data_to_influxdb(result)
+    
     df = pd.DataFrame(all_results)
     return df
 
@@ -330,6 +335,37 @@ INFLUXDB_TOKEN = "djVUB6UCtjkfi42skF9_VMeGAgCA_Mi7Y9_WarFS7Dm8ydn2QD5FyyKyjrndxj
 INFLUXDB_ORG = "test"
 INFLUXDB_BUCKET = "test"
 
+# Function to write individual symbol data to InfluxDB
+def write_symbol_data_to_influxdb(data):
+    """
+    Write symbol-specific data to InfluxDB.
+
+    Args:
+        data (dict): A dictionary containing symbol metrics.
+    """
+    try:
+        with InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG) as client:
+            write_api = client.write_api(write_options=SYNCHRONOUS)
+            
+            point = Point("symbol_metrics") \
+                .tag("Symbol", data["Symbol"]) \
+                .field("RSI", float(data["RSI"])) \
+                .field("Long_Short_Ratio", float(data["Long/Short Ratio"])) \
+                .field("Top_Trader_Ratio", float(data["Top Trader Ratio"])) \
+                .field("CND_Rating", float(data["CND Rating"])) \
+                .field("Current_Price", float(data["Current Price"])) \
+                .field("MACD_Line", float(data["MACD Line"])) \
+                .field("ATR", float(data["ATR"])) \
+                .field("DI+", float(data["DI+"])) \
+                .field("DI-", float(data["DI-"])) \
+                .field("ADX", float(data["ADX"])) \
+                .time(datetime.utcnow())  # Use UTC for consistency
+            
+            write_api.write(bucket=INFLUXDB_BUCKET, record=point)
+            print(f"Data for {data['Symbol']} successfully written to InfluxDB.")
+    except Exception as e:
+        print(f"Failed to write data for {data['Symbol']} to InfluxDB: {e}")
+
 # Function to write data to InfluxDB
 def write_to_influxdb(grouped_stats):
     try:
@@ -396,10 +432,10 @@ def update_data():
         stats_listbox.insert(tk.END, stat)
 
     # Update the next update time
-    next_update_time = datetime.now() + timedelta(minutes=30)
+    next_update_time = datetime.now() + timedelta(minutes=DataInterval)
     update_timer()
     # Schedule the next update
-    root.after(30 * 60 * 1000, update_data)  # 30 minutes
+    root.after(DataInterval * 60 * 1000, update_data)
 
 # Function to update the countdown timer for the next update
 def update_timer():
