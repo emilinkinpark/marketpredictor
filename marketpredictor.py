@@ -12,6 +12,15 @@ import tkinter.font as tkfont
 from ftplib import FTP
 import logging
 
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import SYNCHRONOUS
+
+ # Configuration for InfluxDB
+INFLUXDB_URL = "http://192.168.1.114:8086/"  # Replace with your InfluxDB URL
+INFLUXDB_TOKEN = "djVUB6UCtjkfi42skF9_VMeGAgCA_Mi7Y9_WarFS7Dm8ydn2QD5FyyKyjrndxjnhAGn5VMHLM1HKvCb9rRcP4Q=="
+INFLUXDB_ORG = "test"
+INFLUXDB_BUCKET = "test"
+
 DataInterval = 10 #Insert Data Collection Interval in minutes.
 
 # Configure logging
@@ -26,6 +35,33 @@ logging.basicConfig(
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
 KLINE_URL = "https://fapi.binance.com/fapi/v1/klines"
 EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+OPEN_INTEREST_URL = "https://fapi.binance.com/fapi/v1/openInterest"  # Open Interest endpoint
+LIQUIDATION_URL = "https://fapi.binance.com/fapi/v1/allForceOrders"  # Liquidation data endpoint
+FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
+
+
+# Funding Rate function
+def fetch_funding_rate(symbol, limit=1):
+    """
+    Fetch the most recent funding rate for a given symbol.
+    Returns the funding rate (as percentage) and mark price.
+    """
+    params = {"symbol": symbol, "limit": limit}
+    try:
+        response = requests.get(FUNDING_RATE_URL, params=params, timeout=10)
+        response.raise_for_status()
+        funding_data = response.json()
+        if funding_data:
+            latest_funding = funding_data[-1]  # Get the most recent entry
+            return {
+                "fundingRate": float(latest_funding["fundingRate"]) * 100,  # Convert to percentage
+                "markPrice": float(latest_funding["markPrice"]),
+                "fundingTime": latest_funding["fundingTime"]
+            }
+        return {"fundingRate": 0.0, "markPrice": 0.0, "fundingTime": 0}
+    except Exception as e:
+        logging.error(f"Error fetching funding rate for {symbol}: {e}")
+        return {"fundingRate": 0.0, "markPrice": 0.0, "fundingTime": 0}
 
 # Retry mechanism with exponential backoff
 def fetch_data(url, params=None, retries=100):
@@ -70,6 +106,65 @@ interval = "30m"
 limit = 30
 
 print("Starting Market Predictor")
+
+# Function to calculate VWAP
+def calculate_vwap(klines):
+    """
+    VWAP is a popular indicator that combines price and volume to give an average price a security has traded at throughout the day. 
+    It's often used to identify trends and potential entry/exit points.
+    """
+    total_volume = 0
+    total_price_volume = 0
+
+    for kline in klines:
+        high = float(kline[2])
+        low = float(kline[3])
+        close = float(kline[4])
+        volume = float(kline[5])
+
+        typical_price = (high + low + close) / 3  # Typical price for the period
+        total_price_volume += typical_price * volume
+        total_volume += volume
+
+    if total_volume == 0:
+        return 0  # Avoid division by zero
+    return total_price_volume / total_volume
+
+# Function to fetch Open Interest (OI)
+
+def fetch_open_interest(symbol):
+    """
+    This represents the total number of outstanding futures contracts. 
+    Increasing OI can indicate new money entering the market, while decreasing OI may suggest that traders are closing positions.
+    """
+    params = {"symbol": symbol}
+    try:
+        response = requests.get(OPEN_INTEREST_URL, params=params, timeout=10)
+        response.raise_for_status()
+        oi_data = response.json()
+        return float(oi_data["openInterest"])
+    except Exception as e:
+        logging.error(f"Error fetching Open Interest for {symbol}: {e}")
+        return 0.0  # Default value if no data is available
+
+# Function to fetch Liquidation Data
+def fetch_liquidation_data(symbol):
+    """
+    Fetch liquidation data for a given symbol.
+    """
+    params = {"symbol": symbol, "limit": 10}  # Fetch last 10 liquidation events
+    try:
+        response = requests.get(LIQUIDATION_URL, params=params, timeout=10)
+        response.raise_for_status()
+        liquidation_data = response.json()
+        
+        # Log the liquidation data for debugging
+        logging.info(f"Liquidation data for {symbol}: {liquidation_data}")
+        
+        return liquidation_data
+    except Exception as e:
+        logging.error(f"Error fetching liquidation data for {symbol}: {e}")
+        return []
 
 # Function to calculate RSI
 def calculate_rsi(prices):
@@ -216,6 +311,22 @@ def process_symbols():
             # Fetch top trader ratio
             top_trader_ratio = fetch_top_trader_ratio(symbol)
 
+            # Calculate VWAP
+            vwap = calculate_vwap(kline_data)
+
+            # Fetch Open Interest
+            open_interest = fetch_open_interest(symbol)
+
+            # Fetch Liquidation Data
+            liquidation_data = fetch_liquidation_data(symbol)
+            liquidation_count = len(liquidation_data) if liquidation_data else 0
+
+            # Fetch Funding Rate Data
+            funding_data = fetch_funding_rate(symbol)
+            funding_rate = funding_data["fundingRate"]
+            funding_mark_price = funding_data["markPrice"]
+            funding_time = datetime.fromtimestamp(funding_data["fundingTime"]/1000).strftime("%Y-%m-%d %H:%M:%S")
+
             # Adding a timestamp for the data collected
             timestamp = datetime.now().strftime("%H:%M:%S")
 
@@ -224,23 +335,25 @@ def process_symbols():
                 "Symbol": symbol,
                 "RSI": rsi,
                 "Long/Short Ratio": long_short_ratio,
-                "Top Trader Ratio": top_trader_ratio,  
+                "Top Trader Ratio": top_trader_ratio,
                 "CND Rating": cnd_rating,
                 "Signal Quality": signal_quality,
                 "Current Price": current_price,
                 "MACD Line": macd_line,
-                #"Signal Line": signal_line,
-                #"MACD Histogram": macd_histogram,
                 "ATR": atr,
                 "DI+": di_plus,
                 "DI-": di_minus,
-                "ADX": adx
+                "ADX": adx,
+                "VWAP": vwap,
+                "Open Interest": open_interest,
+                "Liquidation Count": liquidation_count,
+                "Funding Rate": funding_rate,
+                "Funding Mark Price": funding_mark_price,
+                "Last Funding Time": funding_time,
             }
 
             all_results.append(result)
-
-        # Write symbol data to InfluxDB
-        write_symbol_data_to_influxdb(result)
+            #write_symbol_data_to_influxdb(result)
     
     df = pd.DataFrame(all_results)
     return df
@@ -251,7 +364,15 @@ def save_grouped_by_signal_quality(df):
     output_file = f"{current_time}.xlsx"
     writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 
-    # Create a summary per Signal Quality
+    # Define the columns to include (now with funding rate data)
+    columns_to_include = [
+        "Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio",
+        "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR",
+        "DI+", "DI-", "ADX", "VWAP", "Open Interest", "Liquidation Count",
+        "Funding Rate", "Funding Mark Price", "Last Funding Time"
+    ]
+
+    # Create a summary per Signal Quality with additional funding metrics
     summary = df.groupby("Signal Quality").agg(
         Total_Symbols=("Symbol", "nunique"),
         Avg_RSI=("RSI", "mean"),
@@ -259,20 +380,19 @@ def save_grouped_by_signal_quality(df):
         Avg_ADX=("ADX", "mean"),
         Avg_DIplus=("DI+", "mean"),
         Avg_DImin=("DI-", "mean"),
+        Avg_VWAP=("VWAP", "mean"),
+        Avg_Open_Interest=("Open Interest", "mean"),
+        Avg_Liquidation_Count=("Liquidation Count", "mean"),
+        Avg_Funding_Rate=("Funding Rate", "mean"),
         Total_Trades=("Symbol", "count"),
     ).reset_index()
 
     # Write the Signal Quality summary to the leftmost sheet named "Summary"
     summary.to_excel(writer, sheet_name="Summary", index=False, startrow=0)
 
-    # Find the top 6 coins by DI+ and DI-
-    top_di_plus = df.nlargest(10, "DI+")[
-        ["Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio", "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR", "DI+", "DI-", "ADX"]
-    ].reset_index(drop=True)
-
-    top_di_minus = df.nlargest(10, "DI-")[
-        ["Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio", "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR", "DI+", "DI-", "ADX"]
-    ].reset_index(drop=True)
+    # Find the top coins by DI+ and DI- with all columns including funding data
+    top_di_plus = df.nlargest(10, "DI+")[columns_to_include].reset_index(drop=True)
+    top_di_minus = df.nlargest(10, "DI-")[columns_to_include].reset_index(drop=True)
 
     # Write the top 10 DI+ coins below the summary
     top_di_plus_startrow = len(summary) + 3  # Leave some space below the summary
@@ -297,12 +417,48 @@ def save_grouped_by_signal_quality(df):
     )
     worksheet.write(top_di_minus_startrow - 1, 0, "Top 10 Coins by DI- with Details")
 
-    ## Create Individual Coin data per Signal Quality
+    # Create Individual Coin data per Signal Quality
     signal_qualities = df["Signal Quality"].unique()
 
     for quality in signal_qualities:
         df_quality = df[df["Signal Quality"] == quality]
-        df_quality.to_excel(writer, sheet_name=str(quality), index=False)
+        # Include all columns including funding data for individual sheets
+        df_quality[columns_to_include].to_excel(writer, sheet_name=str(quality), index=False)
+
+        # Auto-adjust column widths for better readability
+        worksheet = writer.sheets[str(quality)]
+        for idx, col in enumerate(df_quality[columns_to_include].columns):
+            max_len = max(
+                df_quality[col].astype(str).map(len).max(),  # Max length in data
+                len(str(col))  # Length of column header
+            ) + 1  # Add a little extra space
+            worksheet.set_column(idx, idx, max_len)
+
+    # Auto-adjust column widths for the Summary sheet
+    worksheet = writer.sheets["Summary"]
+    for idx, col in enumerate(summary.columns):
+        max_len = max((
+            summary[col].astype(str).map(len).max(),
+            len(str(col))
+        )) + 1
+        worksheet.set_column(idx, idx, max_len)
+
+    # Add conditional formatting for Funding Rate (negative values in red)
+    for sheet_name in writer.sheets:
+        worksheet = writer.sheets[sheet_name]
+        # Find the column index for Funding Rate
+        if "Funding Rate" in columns_to_include:
+            col_idx = columns_to_include.index("Funding Rate")
+            # Format negative funding rates in red
+            worksheet.conditional_format(
+                1, col_idx, len(df), col_idx,
+                {
+                    'type': 'cell',
+                    'criteria': '<',
+                    'value': 0,
+                    'format': writer.book.add_format({'font_color': 'red'})
+                }
+            )
 
     # Save the Excel file locally
     writer.close()
@@ -326,23 +482,8 @@ def save_grouped_by_signal_quality(df):
     return output_file
 
 
-from influxdb_client import InfluxDBClient, Point
-from influxdb_client.client.write_api import SYNCHRONOUS
-
- # Configuration for InfluxDB
-INFLUXDB_URL = "http://192.168.1.114:8086/"  # Replace with your InfluxDB URL
-INFLUXDB_TOKEN = "djVUB6UCtjkfi42skF9_VMeGAgCA_Mi7Y9_WarFS7Dm8ydn2QD5FyyKyjrndxjnhAGn5VMHLM1HKvCb9rRcP4Q=="
-INFLUXDB_ORG = "test"
-INFLUXDB_BUCKET = "test"
-
 # Function to write individual symbol data to InfluxDB
 def write_symbol_data_to_influxdb(data):
-    """
-    Write symbol-specific data to InfluxDB.
-
-    Args:
-        data (dict): A dictionary containing symbol metrics.
-    """
     try:
         with InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG) as client:
             write_api = client.write_api(write_options=SYNCHRONOUS)
@@ -359,6 +500,9 @@ def write_symbol_data_to_influxdb(data):
                 .field("DI+", float(data["DI+"])) \
                 .field("DI-", float(data["DI-"])) \
                 .field("ADX", float(data["ADX"])) \
+                .field("VWAP", float(data["VWAP"])) \
+                .field("Open_Interest", float(data["Open Interest"])) \
+                .field("Liquidation_Count", int(data["Liquidation Count"])) \
                 .time(datetime.utcnow())  # Use UTC for consistency
             
             write_api.write(bucket=INFLUXDB_BUCKET, record=point)
@@ -366,7 +510,7 @@ def write_symbol_data_to_influxdb(data):
     except Exception as e:
         print(f"Failed to write data for {data['Symbol']} to InfluxDB: {e}")
 
-# Function to write data to InfluxDB
+# Function to write grouped statistics to InfluxDB
 def write_to_influxdb(grouped_stats):
     try:
         with InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG) as client:
@@ -392,37 +536,58 @@ def update_data():
     # Fetch new data
     df = process_symbols()
 
-    #Save the grouped data by Signal Quality into an Excel file
+    # Save the grouped data by Signal Quality into an Excel file
     save_grouped_by_signal_quality(df)
-    # Update GUI for Top 10 Coins
-    top_di_plus = df.nlargest(10, "DI+")[["Symbol", "DI+"]]
-    top_di_minus = df.nlargest(10, "DI-")[["Symbol", "DI-"]]
+    
+    # Update GUI for Top 10 Coins with funding rate as percentage
+    top_di_plus = df.nlargest(10, "DI+")
+    top_di_minus = df.nlargest(10, "DI-")
 
-    for i, (symbol, di) in enumerate(top_di_plus.values):
-        top_di_plus_labels[i]["text"] = f"{symbol}: DI+ {di:.2f}"
-    for i, (symbol, di) in enumerate(top_di_minus.values):
-        top_di_minus_labels[i]["text"] = f"{symbol}: DI- {di:.2f}"
+    for i in range(10):
+        if i < len(top_di_plus):
+            row = top_di_plus.iloc[i]
+            top_di_plus_labels[i]["text"] = (
+                f"{row['Symbol']}: DI+ {row['DI+']:.2f} | "
+                f"RSI {row['RSI']:.1f} | "
+                f"Funding {row['Funding Rate']:.5f}%"
+            )
+        else:
+            top_di_plus_labels[i]["text"] = ""
 
+        if i < len(top_di_minus):
+            row = top_di_minus.iloc[i]
+            top_di_minus_labels[i]["text"] = (
+                f"{row['Symbol']}: DI- {row['DI-']:.2f} | "
+                f"RSI {row['RSI']:.1f} | "
+                f"Funding {row['Funding Rate']:.5f}%"
+            )
+        else:
+            top_di_minus_labels[i]["text"] = ""
 
-    # Calculate grouped statistics
+    # Calculate grouped statistics including funding rate
     grouped_stats_new = df.groupby("Signal Quality").agg({
         "DI+": "mean",
         "DI-": "mean",
-        "RSI": "mean"
-    }).rename(columns={"DI+": "Avg_DI+", "DI-": "Avg_DI-", "RSI": "Avg_RSI"})
+        "RSI": "mean",
+        "Funding Rate": "mean"
+    }).rename(columns={
+        "DI+": "Avg_DI+",
+        "DI-": "Avg_DI-",
+        "RSI": "Avg_RSI",
+        "Funding Rate": "Avg_Funding"
+    })
 
-    # Send grouped statistics to InfluxDB
-    write_to_influxdb(grouped_stats_new)
-
-    # Prepare new stats string
+    # Prepare new stats string with funding rate as percentage
     current_time = datetime.now().strftime("%H:%M:%S")
     stats_label_new = f"{current_time} | " + " | ".join([
-        f"{quality}: DI+ {row['Avg_DI+']:.2f} DI- {row['Avg_DI-']:.2f} RSI {row['Avg_RSI']:.2f}"
+        f"{quality}: DI+ {row['Avg_DI+']:.2f} DI- {row['Avg_DI-']:.2f} "
+        f"RSI {row['Avg_RSI']:.2f} "
+        f"Funding {row['Avg_Funding']:.5f}%"
         for quality, row in grouped_stats_new.iterrows()
     ])
 
     # Maintain only the top 30 stats
-    if len(top_30_stats) >= 30:  # Adjusted to 30 entries
+    if len(top_30_stats) >= 30:
         top_30_stats.pop(0)
     top_30_stats.append(stats_label_new)
 
@@ -453,31 +618,68 @@ def update_timer():
 root = tk.Tk()
 root.title("Market Predictor")
 
-# Top 10 Coins by DI+ Labels
-tk.Label(root, text="Top 10 Coins by DI+:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=10, pady=5)
-top_di_plus_labels = [tk.Label(root, text="", font=("Arial", 10)) for _ in range(10)]
-for i, label in enumerate(top_di_plus_labels):
-    label.grid(row=i + 1, column=0, sticky="w", padx=10)
+# Make the window wider to accommodate the additional information
+root.geometry("1200x800")
 
-# Top 10 Coins by DI- Labels
-tk.Label(root, text="Top 10 Coins by DI-:", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=10, pady=5)
-top_di_minus_labels = [tk.Label(root, text="", font=("Arial", 10)) for _ in range(10)]
-for i, label in enumerate(top_di_minus_labels):
-    label.grid(row=i + 1, column=1, sticky="w", padx=10)
+# Use a monospace font for better alignment
+mono_font = tkfont.Font(family="Courier", size=10)
 
-# Grouped Statistics - Adjusted to 30 Entries
-tk.Label(root, text="Recent Grouped Statistics (Last 30):", font=("Arial", 12, "bold")).grid(row=12, column=0, columnspan=2, pady=10)
-stats_listbox = tk.Listbox(root, width=125, height=30, font=("Courier", 10))
-stats_listbox.grid(row=13, column=0, columnspan=2, padx=10, pady=5)
+# Top 10 Coins by DI+ Frame
+di_plus_frame = tk.Frame(root)
+di_plus_frame.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
+tk.Label(di_plus_frame, text="Top 10 Coins by DI+:", font=("Arial", 12, "bold")).pack()
+
+# Top 10 Coins by DI+ Labels - now with funding rate
+top_di_plus_labels = [tk.Label(di_plus_frame, text="", font=mono_font) for _ in range(10)]
+for label in top_di_plus_labels:
+    label.pack(anchor="w")
+
+# Top 10 Coins by DI- Frame
+di_minus_frame = tk.Frame(root)
+di_minus_frame.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
+tk.Label(di_minus_frame, text="Top 10 Coins by DI-:", font=("Arial", 12, "bold")).pack()
+
+# Top 10 Coins by DI- Labels - now with funding rate
+top_di_minus_labels = [tk.Label(di_minus_frame, text="", font=mono_font) for _ in range(10)]
+for label in top_di_minus_labels:
+    label.pack(anchor="w")
+
+# Grouped Statistics Frame
+stats_frame = tk.Frame(root)
+stats_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
+tk.Label(stats_frame, text="Recent Grouped Statistics (Last 30):", 
+         font=("Arial", 12, "bold")).pack()
+
+# Use a wider Listbox with scrollbar
+stats_listbox = tk.Listbox(stats_frame, width=140, height=20, font=mono_font)
+scrollbar = tk.Scrollbar(stats_frame, orient="vertical")
+scrollbar.pack(side="right", fill="y")
+stats_listbox.pack(side="left", fill="both", expand=True)
+stats_listbox.config(yscrollcommand=scrollbar.set)
+scrollbar.config(command=stats_listbox.yview)
 
 # Countdown Timer for Next Update
-timer_label = tk.Label(root, text="Next update in: 30m 0s", font=("Arial", 12, "bold"), fg="blue")
-timer_label.grid(row=11, column=0, columnspan=2, pady=10)
+timer_frame = tk.Frame(root)
+timer_frame.grid(row=2, column=0, columnspan=2, pady=10)
+timer_label = tk.Label(timer_frame, text="Next update in: --:--", 
+                      font=("Arial", 12, "bold"), fg="blue")
+timer_label.pack()
+
+# Configure grid weights for proper resizing
+root.grid_rowconfigure(1, weight=1)
+root.grid_columnconfigure(0, weight=1)
+root.grid_columnconfigure(1, weight=1)
 
 # Initialize variables
 new_df = pd.DataFrame()
 top_30_stats = []
 next_update_time = None
+columns_to_include = [
+    "Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio",
+    "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR",
+    "DI+", "DI-", "ADX", "VWAP", "Open Interest", "Liquidation Count",
+    "Funding Rate", "Funding Mark Price", "Last Funding Time"
+]
 
 # Start data update
 update_data()
