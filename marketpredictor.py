@@ -12,16 +12,7 @@ import tkinter.font as tkfont
 from ftplib import FTP
 import logging
 
-from influxdb_client import InfluxDBClient, Point
-from influxdb_client.client.write_api import SYNCHRONOUS
-
- # Configuration for InfluxDB
-INFLUXDB_URL = "http://192.168.1.114:8086/"  # Replace with your InfluxDB URL
-INFLUXDB_TOKEN = "djVUB6UCtjkfi42skF9_VMeGAgCA_Mi7Y9_WarFS7Dm8ydn2QD5FyyKyjrndxjnhAGn5VMHLM1HKvCb9rRcP4Q=="
-INFLUXDB_ORG = "test"
-INFLUXDB_BUCKET = "test"
-
-DataInterval = 10 #Insert Data Collection Interval in minutes.
+DataInterval = 10
 
 # Configure logging
 logging.basicConfig(
@@ -36,7 +27,6 @@ LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
 KLINE_URL = "https://fapi.binance.com/fapi/v1/klines"
 EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 OPEN_INTEREST_URL = "https://fapi.binance.com/fapi/v1/openInterest"  # Open Interest endpoint
-LIQUIDATION_URL = "https://fapi.binance.com/fapi/v1/allForceOrders"  # Liquidation data endpoint
 FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
 
 
@@ -147,24 +137,6 @@ def fetch_open_interest(symbol):
         logging.error(f"Error fetching Open Interest for {symbol}: {e}")
         return 0.0  # Default value if no data is available
 
-# Function to fetch Liquidation Data
-def fetch_liquidation_data(symbol):
-    """
-    Fetch liquidation data for a given symbol.
-    """
-    params = {"symbol": symbol, "limit": 10}  # Fetch last 10 liquidation events
-    try:
-        response = requests.get(LIQUIDATION_URL, params=params, timeout=10)
-        response.raise_for_status()
-        liquidation_data = response.json()
-        
-        # Log the liquidation data for debugging
-        logging.info(f"Liquidation data for {symbol}: {liquidation_data}")
-        
-        return liquidation_data
-    except Exception as e:
-        logging.error(f"Error fetching liquidation data for {symbol}: {e}")
-        return []
 
 # Function to calculate RSI
 def calculate_rsi(prices):
@@ -317,10 +289,6 @@ def process_symbols():
             # Fetch Open Interest
             open_interest = fetch_open_interest(symbol)
 
-            # Fetch Liquidation Data
-            liquidation_data = fetch_liquidation_data(symbol)
-            liquidation_count = len(liquidation_data) if liquidation_data else 0
-
             # Fetch Funding Rate Data
             funding_data = fetch_funding_rate(symbol)
             funding_rate = funding_data["fundingRate"]
@@ -346,14 +314,12 @@ def process_symbols():
                 "ADX": adx,
                 "VWAP": vwap,
                 "Open Interest": open_interest,
-                "Liquidation Count": liquidation_count,
                 "Funding Rate": funding_rate,
                 "Funding Mark Price": funding_mark_price,
                 "Last Funding Time": funding_time,
             }
 
             all_results.append(result)
-            #write_symbol_data_to_influxdb(result)
     
     df = pd.DataFrame(all_results)
     return df
@@ -368,8 +334,8 @@ def save_grouped_by_signal_quality(df):
     columns_to_include = [
         "Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio",
         "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR",
-        "DI+", "DI-", "ADX", "VWAP", "Open Interest", "Liquidation Count",
-        "Funding Rate", "Funding Mark Price", "Last Funding Time"
+        "DI+", "DI-", "ADX", "VWAP", "Open Interest","Funding Rate", 
+        "Funding Mark Price", "Last Funding Time"
     ]
 
     # Create a summary per Signal Quality with additional funding metrics
@@ -382,7 +348,6 @@ def save_grouped_by_signal_quality(df):
         Avg_DImin=("DI-", "mean"),
         Avg_VWAP=("VWAP", "mean"),
         Avg_Open_Interest=("Open Interest", "mean"),
-        Avg_Liquidation_Count=("Liquidation Count", "mean"),
         Avg_Funding_Rate=("Funding Rate", "mean"),
         Total_Trades=("Symbol", "count"),
     ).reset_index()
@@ -481,54 +446,6 @@ def save_grouped_by_signal_quality(df):
 
     return output_file
 
-
-# Function to write individual symbol data to InfluxDB
-def write_symbol_data_to_influxdb(data):
-    try:
-        with InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG) as client:
-            write_api = client.write_api(write_options=SYNCHRONOUS)
-            
-            point = Point("symbol_metrics") \
-                .tag("Symbol", data["Symbol"]) \
-                .field("RSI", float(data["RSI"])) \
-                .field("Long_Short_Ratio", float(data["Long/Short Ratio"])) \
-                .field("Top_Trader_Ratio", float(data["Top Trader Ratio"])) \
-                .field("CND_Rating", float(data["CND Rating"])) \
-                .field("Current_Price", float(data["Current Price"])) \
-                .field("MACD_Line", float(data["MACD Line"])) \
-                .field("ATR", float(data["ATR"])) \
-                .field("DI+", float(data["DI+"])) \
-                .field("DI-", float(data["DI-"])) \
-                .field("ADX", float(data["ADX"])) \
-                .field("VWAP", float(data["VWAP"])) \
-                .field("Open_Interest", float(data["Open Interest"])) \
-                .field("Liquidation_Count", int(data["Liquidation Count"])) \
-                .time(datetime.utcnow())  # Use UTC for consistency
-            
-            write_api.write(bucket=INFLUXDB_BUCKET, record=point)
-            print(f"Data for {data['Symbol']} successfully written to InfluxDB.")
-    except Exception as e:
-        print(f"Failed to write data for {data['Symbol']} to InfluxDB: {e}")
-
-# Function to write grouped statistics to InfluxDB
-def write_to_influxdb(grouped_stats):
-    try:
-        with InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG) as client:
-            write_api = client.write_api(write_options=SYNCHRONOUS)
-
-            for quality, row in grouped_stats.iterrows():
-                point = Point("group_statistics") \
-                    .tag("Signal_Quality", quality) \
-                    .field("Avg_DI+", row["Avg_DI+"]) \
-                    .field("Avg_DI-", row["Avg_DI-"]) \
-                    .field("Avg_RSI", row["Avg_RSI"]) \
-                    .time(datetime.utcnow())  # Use UTC timestamp for consistency
-                write_api.write(bucket=INFLUXDB_BUCKET, record=point)
-
-            print("Grouped statistics successfully written to InfluxDB.")
-    except Exception as e:
-        print(f"Failed to write to InfluxDB: {e}")
-
 # Function to update data and refresh the GUI
 def update_data():
     global new_df, top_30_stats, next_update_time
@@ -539,9 +456,12 @@ def update_data():
     # Save the grouped data by Signal Quality into an Excel file
     save_grouped_by_signal_quality(df)
     
-    # Update GUI for Top 10 Coins with funding rate as percentage
+    # Update GUI for Top 10 Coins by DI+
     top_di_plus = df.nlargest(10, "DI+")
-    top_di_minus = df.nlargest(10, "DI-")
+
+    # Filter for Funding Rate < -0.2500 and get the top 10 with the most negative rates
+    negative_funding_df = df[df["Funding Rate"] < -0.2500]
+    top_negative_funding = negative_funding_df.nsmallest(10, "Funding Rate")
 
     for i in range(10):
         if i < len(top_di_plus):
@@ -554,15 +474,15 @@ def update_data():
         else:
             top_di_plus_labels[i]["text"] = ""
 
-        if i < len(top_di_minus):
-            row = top_di_minus.iloc[i]
-            top_di_minus_labels[i]["text"] = (
-                f"{row['Symbol']}: DI- {row['DI-']:.2f} | "
+        if i < len(top_negative_funding):
+            row = top_negative_funding.iloc[i]
+            negative_funding_labels[i]["text"] = (
+                f"{row['Symbol']}: Funding {row['Funding Rate']:.5f}% | "
                 f"RSI {row['RSI']:.1f} | "
-                f"Funding {row['Funding Rate']:.5f}%"
+                f"DI- {row['DI-']:.2f}"
             )
         else:
-            top_di_minus_labels[i]["text"] = ""
+            negative_funding_labels[i]["text"] = ""
 
     # Calculate grouped statistics including funding rate
     grouped_stats_new = df.groupby("Signal Quality").agg({
@@ -599,6 +519,7 @@ def update_data():
     # Update the next update time
     next_update_time = datetime.now() + timedelta(minutes=DataInterval)
     update_timer()
+
     # Schedule the next update
     root.after(DataInterval * 60 * 1000, update_data)
 
@@ -634,14 +555,23 @@ top_di_plus_labels = [tk.Label(di_plus_frame, text="", font=mono_font) for _ in 
 for label in top_di_plus_labels:
     label.pack(anchor="w")
 
-# Top 10 Coins by DI- Frame
+""" # Top 10 Coins by DI- Frame
 di_minus_frame = tk.Frame(root)
 di_minus_frame.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
-tk.Label(di_minus_frame, text="Top 10 Coins by DI-:", font=("Arial", 12, "bold")).pack()
+tk.Label(di_minus_frame, text="Top 10 Coins by DI-:", font=("Arial", 12, "bold")).pack() """
 
-# Top 10 Coins by DI- Labels - now with funding rate
+""" # Top 10 Coins by DI- Labels - now with funding rate
 top_di_minus_labels = [tk.Label(di_minus_frame, text="", font=mono_font) for _ in range(10)]
 for label in top_di_minus_labels:
+    label.pack(anchor="w") """
+# Top 10 Coins with Funding Rate < -0.2500 Frame
+negative_funding_frame = tk.Frame(root)
+negative_funding_frame.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
+tk.Label(negative_funding_frame, text="Top 10 Coins with Funding Rate < -0.2500%:", font=("Arial", 12, "bold")).pack()
+
+# Labels for Top 10 Negative Funding Rate Coins
+negative_funding_labels = [tk.Label(negative_funding_frame, text="", font=mono_font) for _ in range(10)]
+for label in negative_funding_labels:
     label.pack(anchor="w")
 
 # Grouped Statistics Frame
@@ -677,7 +607,7 @@ next_update_time = None
 columns_to_include = [
     "Timestamp", "Symbol", "RSI", "Long/Short Ratio", "Top Trader Ratio",
     "CND Rating", "Signal Quality", "Current Price", "MACD Line", "ATR",
-    "DI+", "DI-", "ADX", "VWAP", "Open Interest", "Liquidation Count",
+    "DI+", "DI-", "ADX", "VWAP", "Open Interest",
     "Funding Rate", "Funding Mark Price", "Last Funding Time"
 ]
 
