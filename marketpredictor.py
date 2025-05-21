@@ -10,17 +10,8 @@ import threading
 import itertools
 import tkinter.font as tkfont
 from ftplib import FTP
-import logging
 
 DataInterval = 10
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    filename="binance_api.log",
-    filemode="a",  # Append mode
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
 
 # Binance API URLs
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -50,26 +41,20 @@ def fetch_funding_rate(symbol, limit=1):
             }
         return {"fundingRate": 0.0, "markPrice": 0.0, "fundingTime": 0}
     except Exception as e:
-        logging.error(f"Error fetching funding rate for {symbol}: {e}")
         return {"fundingRate": 0.0, "markPrice": 0.0, "fundingTime": 0}
 
 # Retry mechanism with exponential backoff
 def fetch_data(url, params=None, retries=100):
     for attempt in range(retries):
         try:
-            #logging.info(f"Fetching data from {url} with params: {params}")
             response = requests.get(url, params=params, timeout=10)  # 10 seconds timeout
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx, 5xx)
-            logging.info(f"Successful response from {url}")
             return response.json()
         except requests.exceptions.RequestException as e:
-            logging.error(f"Error fetching data from {url}: {e}")
             if attempt < retries - 1:
                 sleep_time = 2 ** attempt  # Exponential backoff
-                logging.warning(f"Retrying in {sleep_time} seconds... (Attempt {attempt + 1}/{retries})")
                 time.sleep(sleep_time)
             else:
-                logging.critical(f"Max retries reached. Could not fetch data from {url}")
                 raise
 
 # Test all three URLs
@@ -77,19 +62,16 @@ try:
     # Fetch Long/Short Ratio data
     params_lsr = {"symbol": "BTCUSDT", "period": "5m", "limit": 30}
     lsr_data = fetch_data(LSR_URL, params=params_lsr)
-    logging.info(f"Long/Short Ratio Data: {lsr_data}")
 
     # Fetch Kline data
     params_kline = {"symbol": "BTCUSDT", "interval": "30m", "limit": 30}
     kline_data = fetch_data(KLINE_URL, params=params_kline)
-    logging.info(f"Kline Data: {kline_data}")
 
     # Fetch Exchange Info
     exchange_info_data = fetch_data(EXCHANGE_INFO_URL)
-    logging.info(f"Exchange Info Data: {exchange_info_data}")
 
 except Exception as e:
-    logging.critical(f"Failed to fetch data: {e}")
+    pass
 
 # Parameters for API requests
 interval = "30m"
@@ -134,7 +116,6 @@ def fetch_open_interest(symbol):
         oi_data = response.json()
         return float(oi_data["openInterest"])
     except Exception as e:
-        logging.error(f"Error fetching Open Interest for {symbol}: {e}")
         return 0.0  # Default value if no data is available
 
 
@@ -165,7 +146,6 @@ def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
     long_ema = calculate_ema(prices, long_period)
     macd_line = short_ema - long_ema
     signal_line = calculate_ema([macd_line] * signal_period, signal_period)
-    #macd_histogram = macd_line - signal_line
     return macd_line, signal_line
 
 # Function to calculate ATR
@@ -237,7 +217,6 @@ def fetch_top_trader_ratio(symbol):
         else:
             return 0.0  # Default value if no data is available
     else:
-        print(f"Error fetching top trader ratio for {symbol}: {response.status_code}")
         return 0.0
 
 # Main symbol processing function
@@ -555,15 +534,6 @@ top_di_plus_labels = [tk.Label(di_plus_frame, text="", font=mono_font) for _ in 
 for label in top_di_plus_labels:
     label.pack(anchor="w")
 
-""" # Top 10 Coins by DI- Frame
-di_minus_frame = tk.Frame(root)
-di_minus_frame.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
-tk.Label(di_minus_frame, text="Top 10 Coins by DI-:", font=("Arial", 12, "bold")).pack() """
-
-""" # Top 10 Coins by DI- Labels - now with funding rate
-top_di_minus_labels = [tk.Label(di_minus_frame, text="", font=mono_font) for _ in range(10)]
-for label in top_di_minus_labels:
-    label.pack(anchor="w") """
 # Top 10 Coins with Funding Rate < -0.2500 Frame
 negative_funding_frame = tk.Frame(root)
 negative_funding_frame.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
