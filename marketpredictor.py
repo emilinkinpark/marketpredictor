@@ -12,7 +12,7 @@ import tkinter.font as tkfont
 from ftplib import FTP
 import logging
 
-DataInterval = 10
+DataInterval = 30
 
 # Configure logging
 logging.basicConfig(
@@ -21,6 +21,40 @@ logging.basicConfig(
     filemode="a",  # Append mode
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+from telegram import Bot
+from telegram.error import TelegramError
+import asyncio
+
+# Add these configuration variables near your other constants
+TELEGRAM_BOT_TOKEN = "7313019255:AAHLX7402sOnleA6G8X4zOd81T3ANZD1I8M"  # Replace with your bot token
+TELEGRAM_CHAT_ID = "1467753798"  # Replace with your chat ID
+
+# Add this class before your main code
+class TelegramBot:
+    def __init__(self, token, chat_id):
+        self.token = token
+        self.chat_id = chat_id
+        self.bot = Bot(token=self.token)
+        
+    async def send_message(self, text):
+        try:
+            await self.bot.send_message(chat_id=self.chat_id, text=text)
+        except TelegramError as e:
+            logging.error(f"Telegram send message error: {e}")
+            
+    def send_message_sync(self, text):
+        try:
+            asyncio.run(self.send_message(text))
+        except Exception as e:
+            logging.error(f"Error sending Telegram message: {e}")
+
+
+
+# Initialize the Telegram bot at the start of your script (before process_symbols())
+telegram_bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+
 
 # Binance API URLs
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -456,12 +490,28 @@ def update_data():
     # Save the grouped data by Signal Quality into an Excel file
     save_grouped_by_signal_quality(df)
     
-    # Update GUI for Top 10 Coins by DI+
-    top_di_plus = df.nlargest(10, "DI+")
-
     # Filter for Funding Rate < -0.2500 and get the top 10 with the most negative rates
     negative_funding_df = df[df["Funding Rate"] < -0.2500]
     top_negative_funding = negative_funding_df.nsmallest(10, "Funding Rate")
+    
+    # Prepare Telegram message for negative funding rates
+    if not top_negative_funding.empty:
+        message_lines = ["🔴 Top Coins with High Negative Funding Rates (< -0.2500%):"]
+        for i, (_, row) in enumerate(top_negative_funding.iterrows(), 1):
+            message_lines.append(
+                f"{i}. {row['Symbol']}: "
+                f"Funding {row['Funding Rate']:.5f}% | "
+                f"RSI {row['RSI']:.1f} | "
+                f"DI- {row['DI-']:.2f}"
+            )
+        message = "\n".join(message_lines)
+        telegram_bot.send_message_sync(message)
+    else:
+        telegram_bot.send_message_sync("ℹ️ No coins with funding rate < -0.2500% found in this interval.")
+
+    # Rest of your existing update_data() function remains the same...
+    # Update GUI for Top 10 Coins by DI+
+    top_di_plus = df.nlargest(10, "DI+")
 
     for i in range(10):
         if i < len(top_di_plus):
