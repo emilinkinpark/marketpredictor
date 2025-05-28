@@ -264,7 +264,17 @@ def fetch_top_trader_ratio(symbol):
     TOP_TRADER_RATIO_URL = "https://fapi.binance.com/futures/data/topLongShortPositionRatio"
     params = {"symbol": symbol, "period": "30m", "limit": 1}  # 30-minute interval, latest data only
 
-    response = requests.get(TOP_TRADER_RATIO_URL, params=params)
+    try:
+        response = requests.get(TOP_TRADER_RATIO_URL, params=params, timeout=10)
+        response.raise_for_status()
+        trader_data = response.json()
+        if trader_data:
+            return float(trader_data[-1]["longShortRatio"])
+        return 0.0
+    except Exception as e:
+        logging.error(f"Error fetching top trader ratio for {symbol}: {e}")
+        return 0.0
+
     if response.status_code == 200:
         trader_data = response.json()
         if len(trader_data) > 0:
