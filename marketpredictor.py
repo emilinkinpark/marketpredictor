@@ -503,7 +503,7 @@ def update_data():
             message_lines.append(
                 f"{i}. {row['Symbol']}:"
                 f"Funding {row['Funding Rate']:.5f}% | RSI {row['RSI']:.1f} | DI- {row['DI-']:.2f}"
-                f"VWAP {row['VWAP']:.2f} | +5% {price * 1.05:.2f} | -5% {price * 0.95:.2f}"
+                f"VWAP {row['VWAP']:.4f} | Price+5%: {price * 1.05:.4f} | Price-5% {price * 0.95:.4f}"
                 f"Last Funding: {row['Last Funding Time']}"
             )
         message = "\n".join(message_lines)
@@ -511,7 +511,6 @@ def update_data():
     """else:
         telegram_bot.send_message_sync("ℹ️ No coins with funding rate < -0.2500% found in this interval.")"""
 
-    # Rest of your existing update_data() function remains the same...
     # Update GUI for Top 10 Coins by DI+
     top_di_plus = df.nlargest(10, "DI+")
 
