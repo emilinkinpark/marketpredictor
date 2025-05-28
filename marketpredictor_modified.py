@@ -508,8 +508,8 @@ def update_data():
             )
         message = "\n".join(message_lines)
         telegram_bot.send_message_sync(message)
-    """else:
-        telegram_bot.send_message_sync("ℹ️ No coins with funding rate < -0.2500% found in this interval.")"""
+    else:
+        telegram_bot.send_message_sync("ℹ️ No coins with funding rate < -0.2500% found in this interval.")
 
     # Rest of your existing update_data() function remains the same...
     # Update GUI for Top 10 Coins by DI+
