@@ -6,11 +6,22 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
 from tkinter import filedialog
 import time
-import threading
+
 import itertools
 import tkinter.font as tkfont
 from ftplib import FTP
+
+import asyncio
+import threading
+from telegram import Bot
+from telegram.error import TelegramError
+from telegram.request import HTTPXRequest
 import logging
+import httpx
+
+# Add these configuration variables near your other constants
+TELEGRAM_BOT_TOKEN = "7313019255:AAHLX7402sOnleA6G8X4zOd81T3ANZD1I8M"  # Replace with your bot token
+TELEGRAM_CHAT_IDS = ["1467753798", "7067223564"]  # Replace with your chat ID
 
 DataInterval = 30
 
@@ -22,34 +33,38 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+
+# Telegram Related Class
+import asyncio
+import threading
 from telegram import Bot
 from telegram.error import TelegramError
-import asyncio
+from telegram.request import HTTPXRequest
+import logging
+import httpx
 
-# Add these configuration variables near your other constants
-TELEGRAM_BOT_TOKEN = "7313019255:AAHLX7402sOnleA6G8X4zOd81T3ANZD1I8M"  # Replace with your bot token
-TELEGRAM_CHAT_IDS = ["1467753798", "7067223564"]  # Replace with your chat ID
-
-# Add this class before your main code
 class TelegramBot:
     def __init__(self, token, chat_ids):
         self.token = token
         self.chat_ids = chat_ids
-        self.bot = Bot(token=self.token)
 
-    async def send_message(self, text):
-        for chat_id in self.chat_ids:
-            try:
-                await self.bot.send_message(chat_id=chat_id, text=text)
-            except TelegramError as e:
-                logging.error(f"Telegram send message error to {chat_id}: {e}")
-            
+    async def _send_message_async(self, text):
+        async with httpx.AsyncClient(timeout=10) as client:
+            request = HTTPXRequest(client=client)
+            bot = Bot(token=self.token, request=request)
+            for chat_id in self.chat_ids:
+                try:
+                    await bot.send_message(chat_id=chat_id, text=text)
+                except TelegramError as e:
+                    logging.error(f"Telegram send message error to {chat_id}: {e}")
+
     def send_message_sync(self, text):
-        try:
-            asyncio.run(self.send_message(text))
-        except Exception as e:
-            logging.error(f"Error sending Telegram message: {e}")
-
+        def _run():
+            try:
+                asyncio.run(self._send_message_async(text))
+            except Exception as e:
+                logging.error(f"Error sending Telegram message: {e}")
+        threading.Thread(target=_run).start()
 
 
 # Initialize the Telegram bot at the start of your script (before process_symbols())
@@ -513,11 +528,12 @@ def update_data():
             message_lines.append(
                 f"{i}. {row['Symbol']}:"
                 f"Funding {row['Funding Rate']:.5f}% | RSI {row['RSI']:.1f} | DI- {row['DI-']:.2f}"
-                f"VWAP {row['VWAP']:.4f} | Price+5%: {price * 1.05:.4f} | Price-5% {price * 0.95:.4f}"
+                f"VWAP {row['VWAP']:.5f} | Price+5%: {price * 1.05:.5f} | Price-5%: {price * 0.95:.5f}"
                 f"Last Funding: {row['Last Funding Time']}"
             )
         message = "\n".join(message_lines)
         telegram_bot.send_message_sync(message)
+        print("Current Time: ",current_time," ", "Sending Telegram Message" )
     """else:
         telegram_bot.send_message_sync("ℹ️ No coins with funding rate < -0.2500% found in this interval.")"""
 
