@@ -47,30 +47,60 @@ class TelegramBot:
     def __init__(self, token, chat_ids):
         self.token = token
         self.chat_ids = chat_ids
+        # Create a single client instance with larger connection pool
+        self.client = httpx.AsyncClient(
+            timeout=30.0,  # Increased timeout
+            limits=httpx.Limits(
+                max_connections=10,  # Increased connection pool
+                max_keepalive_connections=5
+            )
+        )
+        # Initialize the request object without passing client directly
+        self.request = HTTPXRequest()
+        self.request._client = self.client  # Manually set the client
 
     async def _send_message_async(self, text):
-        async with httpx.AsyncClient(timeout=10) as client:
-            request = HTTPXRequest(client=client)
-            bot = Bot(token=self.token, request=request)
-            for chat_id in self.chat_ids:
-                try:
-                    await bot.send_message(chat_id=chat_id, text=text)
-                except TelegramError as e:
-                    logging.error(f"Telegram send message error to {chat_id}: {e}")
+        bot = Bot(token=self.token, request=self.request)
+        for chat_id in self.chat_ids:
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    read_timeout=30,  # Increased read timeout
+                    write_timeout=30,  # Increased write timeout
+                    connect_timeout=30  # Increased connect timeout
+                )
+                await asyncio.sleep(1)  # Small delay between messages
+            except TelegramError as e:
+                logging.error(f"Telegram send message error to {chat_id}: {e}")
+                continue  # Continue with next chat ID if one fails
 
     def send_message_sync(self, text):
         def _run():
             try:
-                asyncio.run(self._send_message_async(text))
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self._send_message_async(text))
             except Exception as e:
                 logging.error(f"Error sending Telegram message: {e}")
-        threading.Thread(target=_run).start()
+            finally:
+                loop.close()
+        
+        # Run in a separate thread to avoid blocking
+        threading.Thread(target=_run, daemon=True).start()
+
+    def __del__(self):
+        # Clean up the client when the bot is destroyed
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.client.aclose())
+        except Exception as e:
+            logging.error(f"Error closing Telegram client: {e}")
 
 
 # Initialize the Telegram bot at the start of your script (before process_symbols())
 telegram_bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS)
-
-
 
 # Binance API URLs
 LSR_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -516,24 +546,25 @@ def update_data():
     # Save the grouped data by Signal Quality into an Excel file
     save_grouped_by_signal_quality(df)
     
-    # Filter for Funding Rate < -0.2500 and get the top 10 with the most negative rates
-    negative_funding_df = df[df["Funding Rate"] < -0.2500]
+    # Filter for Funding Rate < -0.2500 and RSI > 60
+    negative_funding_df = df[(df["Funding Rate"] < -0.2500) & (df["RSI"] > 60)]
     top_negative_funding = negative_funding_df.nsmallest(10, "Funding Rate")
-    
-    # Prepare Telegram message for negative funding rates
+
+    # Prepare Telegram message for filtered results
     if not top_negative_funding.empty:
-        message_lines = ["🔴 Top Coins with High Negative Funding Rates (< -0.2500%):"]
+        message_lines = ["🔴 Top Coins with RSI > 60 and High Negative Funding Rates (< -0.2500%):"]
         for i, (_, row) in enumerate(top_negative_funding.iterrows(), 1):
             price = row['Current Price']
             message_lines.append(
-                f"{i}. {row['Symbol']}:"
-                f"Funding {row['Funding Rate']:.5f}% | RSI {row['RSI']:.1f} | DI- {row['DI-']:.2f}"
-                f"VWAP {row['VWAP']:.5f} | Price+5%: {price * 1.05:.5f} | Price-5%: {price * 0.95:.5f}"
+                f"{i}. {row['Symbol']}: "
+                f"Funding {row['Funding Rate']:.5f}% | RSI {row['RSI']:.1f} | DI- {row['DI-']:.2f} | "
+                f"VWAP {row['VWAP']:.5f} | Price+5%: {price * 1.05:.5f} | Price-5%: {price * 0.95:.5f} | "
                 f"Last Funding: {row['Last Funding Time']}"
             )
         message = "\n".join(message_lines)
         telegram_bot.send_message_sync(message)
-        print("Current Time: ",current_time," ", "Sending Telegram Message" )
+        # Print formatted time and message
+        print("Current Time:", datetime.now().strftime("%H:%M:%S"), "- Sending Telegram Message..")
     """else:
         telegram_bot.send_message_sync("ℹ️ No coins with funding rate < -0.2500% found in this interval.")"""
 
